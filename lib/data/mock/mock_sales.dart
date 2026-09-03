@@ -1,0 +1,151 @@
+import '../models/sales_data.dart';
+
+final List<TransactionRecord> mockTransactions = [
+  TransactionRecord(
+    id: 'TXN-001',
+    orderId: '#ORD-004',
+    productName: 'Sweet Potatoes',
+    quantity: 10,
+    unitPrice: 1800,
+    totalAmount: 18000,
+    commission: 1800,
+    vendorEarning: 16200,
+    date: DateTime.now().subtract(const Duration(hours: 1)),
+    status: 'completed',
+  ),
+  TransactionRecord(
+    id: 'TXN-002',
+    orderId: '#ORD-003',
+    productName: 'Organic Lettuce',
+    quantity: 2,
+    unitPrice: 1500,
+    totalAmount: 3000,
+    commission: 300,
+    vendorEarning: 2700,
+    date: DateTime.now().subtract(const Duration(minutes: 32)),
+    status: 'completed',
+  ),
+  TransactionRecord(
+    id: 'TXN-003',
+    orderId: '#ORD-001',
+    productName: 'Fresh Tomatoes',
+    quantity: 5,
+    unitPrice: 2500,
+    totalAmount: 12500,
+    commission: 1250,
+    vendorEarning: 11250,
+    date: DateTime.now().subtract(const Duration(minutes: 2)),
+    status: 'pending',
+  ),
+  TransactionRecord(
+    id: 'TXN-004',
+    orderId: '#ORD-001',
+    productName: 'Onions',
+    quantity: 2,
+    unitPrice: 1200,
+    totalAmount: 2400,
+    commission: 240,
+    vendorEarning: 2160,
+    date: DateTime.now().subtract(const Duration(minutes: 2)),
+    status: 'pending',
+  ),
+  TransactionRecord(
+    id: 'TXN-005',
+    orderId: '#ORD-002',
+    productName: 'Bell Peppers',
+    quantity: 3,
+    unitPrice: 3200,
+    totalAmount: 9600,
+    commission: 960,
+    vendorEarning: 8640,
+    date: DateTime.now().subtract(const Duration(minutes: 15)),
+    status: 'pending',
+  ),
+  TransactionRecord(
+    id: 'TXN-006',
+    orderId: '#ORD-005',
+    productName: 'Carrots',
+    quantity: 4,
+    unitPrice: 1800,
+    totalAmount: 7200,
+    commission: 720,
+    vendorEarning: 6480,
+    date: DateTime.now().subtract(const Duration(hours: 2)),
+    status: 'completed',
+  ),
+  TransactionRecord(
+    id: 'TXN-007',
+    orderId: '#ORD-005',
+    productName: 'Onions',
+    quantity: 3,
+    unitPrice: 1200,
+    totalAmount: 3600,
+    commission: 360,
+    vendorEarning: 3240,
+    date: DateTime.now().subtract(const Duration(hours: 2)),
+    status: 'completed',
+  ),
+  TransactionRecord(
+    id: 'TXN-008',
+    orderId: '#ORD-006',
+    productName: 'Brown Rice',
+    quantity: 20,
+    unitPrice: 850,
+    totalAmount: 17000,
+    commission: 1700,
+    vendorEarning: 15300,
+    date: DateTime.now().subtract(const Duration(minutes: 45)),
+    status: 'pending',
+  ),
+  TransactionRecord(
+    id: 'TXN-009',
+    orderId: '#ORD-007',
+    productName: 'Fresh Oranges',
+    quantity: 8,
+    unitPrice: 2000,
+    totalAmount: 16000,
+    commission: 1600,
+    vendorEarning: 14400,
+    date: DateTime.now().subtract(const Duration(minutes: 5)),
+    status: 'pending',
+  ),
+  TransactionRecord(
+    id: 'TXN-010',
+    orderId: '#ORD-007',
+    productName: 'Fresh Basil',
+    quantity: 2,
+    unitPrice: 500,
+    totalAmount: 1000,
+    commission: 100,
+    vendorEarning: 900,
+    date: DateTime.now().subtract(const Duration(minutes: 5)),
+    status: 'pending',
+  ),
+];
+
+// Chart data: sales per day for the last 7 days
+final List<SalesByPeriod> mockWeeklySales = [
+  SalesByPeriod(label: 'Mon', amount: 45000),
+  SalesByPeriod(label: 'Tue', amount: 32000),
+  SalesByPeriod(label: 'Wed', amount: 58000),
+  SalesByPeriod(label: 'Thu', amount: 41000),
+  SalesByPeriod(label: 'Fri', amount: 67000),
+  SalesByPeriod(label: 'Sat', amount: 89000),
+  SalesByPeriod(label: 'Sun', amount: 73300),
+];
+
+SalesSummary getMockSalesSummary() {
+  final completed = mockTransactions.where((t) => t.status == 'completed').toList();
+  final totalSales = completed.fold<double>(0, (sum, t) => sum + t.totalAmount);
+  final totalCommission = completed.fold<double>(0, (sum, t) => sum + t.commission);
+  final totalEarnings = completed.fold<double>(0, (sum, t) => sum + t.vendorEarning);
+  final orderIds = completed.map((t) => t.orderId).toSet();
+
+  return SalesSummary(
+    totalSales: totalSales,
+    vendorEarnings: totalEarnings,
+    growboxCommission: totalCommission,
+    completedOrders: orderIds.length,
+    totalOrders: mockTransactions.map((t) => t.orderId).toSet().length,
+  );
+}

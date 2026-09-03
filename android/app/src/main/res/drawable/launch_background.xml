@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GROWBOX Vendor splash screen -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background: GROWBOX green -->
+    <item android:drawable="@color/growbox_splash_bg" />
+
+    <!-- Centered eco icon -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/ic_splash_logo"
+            android:tint="#FFFFFF" />
+    </item>
+</layer-list>
