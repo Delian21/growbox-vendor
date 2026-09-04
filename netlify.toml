@@ -1,0 +1,9 @@
+# Netlify build config for the Flutter web app.
+# The netlify-plugin-flutter build plugin installs the Flutter SDK into
+# Netlify's build environment so `flutter build web` can run there.
+[build]
+  command = "flutter build web --release"
+  publish = "build/web"
+
+[[plugins]]
+  package = "netlify-plugin-flutter"
