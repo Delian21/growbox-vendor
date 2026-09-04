@@ -33,7 +33,7 @@ class MockImages {
     'Yam': produce('yam.jpg'),
     'Eggs': produce('eggs.jpg'),
     'Cassava Flour': produce('cassava_flour.jpg'),
-    'Palm Oil': produce('oils.jpg'),
+    'Palm Oil': produce('palm_oil.jpg'),
     'Groundnut Oil': produce('oils.jpg'),
   };
 
