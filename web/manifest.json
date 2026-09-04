@@ -1,11 +1,11 @@
 {
-    "name": "growbox_vendor",
-    "short_name": "growbox_vendor",
+    "name": "GROWBOX Vendor Portal",
+    "short_name": "GROWBOX Vendor",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F9F8F4",
+    "theme_color": "#1A7F50",
+    "description": "Vendor portal for the GROWBOX agricultural marketplace — manage your store, products, orders and sales.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -32,4 +32,4 @@
             "purpose": "maskable"
         }
     ]
-}
+}

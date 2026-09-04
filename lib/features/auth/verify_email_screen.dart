@@ -5,6 +5,7 @@ import 'dart:ui';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../shared/widgets/growbox_button.dart';
+import '../../shared/widgets/growbox_success_modal.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
@@ -19,6 +20,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   int _resendSeconds = 45;
   bool _canResend = false;
+  bool _isVerifying = false;
 
   @override
   void initState() {
@@ -244,8 +246,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                         // ── Verify Button ──
                         GrowboxButton(
                           label: 'Verify',
-                          onPressed: _handleVerify,
+                          onPressed: _isVerifying ? null : _handleVerify,
                           isExpanded: true,
+                          isLoading: _isVerifying,
                           icon: Icons.check,
                         ),
                       ],
@@ -271,7 +274,24 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       );
       return;
     }
-    // TODO: Mock verification
+    setState(() => _isVerifying = true);
+
+    // TODO: Mock verification — will validate the code against the backend later
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (!mounted) return;
+    setState(() => _isVerifying = false);
+
+    await GrowboxSuccessModal.show(
+      context: context,
+      title: 'Email Verified',
+      message:
+          'Your email has been verified successfully. You can now continue setting up your store.',
+      buttonLabel: 'Continue',
+      icon: Icons.verified_rounded,
+    );
+
+    if (!mounted) return;
     context.go('/onboarding/business-info');
   }
 }

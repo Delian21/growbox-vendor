@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:ui';
 import '../../core/constants/app_colors.dart';
@@ -236,20 +237,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // ── Preview: Onboarding (dev link) ──
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: () => context.go('/onboarding/business-info'),
-                            child: Text(
-                              'Preview: Onboarding Flow',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.brandOrange,
-                                decoration: TextDecoration.underline,
+                          // ── Preview: Onboarding (dev only) ──
+                          if (kDebugMode) ...[
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: () => context.go('/onboarding/business-info'),
+                              child: const Text(
+                                'Preview: Onboarding Flow',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.brandOrange,
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
+                            const SizedBox(height: 8),
+                          ],
 
                           // ── Footer ──
                           Text(
