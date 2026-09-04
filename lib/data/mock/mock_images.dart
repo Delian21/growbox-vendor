@@ -39,19 +39,6 @@ class MockImages {
 
   static String? forProduct(String name) => products[name];
 
-  /// Category photos used by the dashboard "Sales by Category" legend.
-  static final Map<String, String> categories = {
-    'Vegetables': produce('tomatoes.jpg'),
-    'Fruits': produce('oranges.jpg'),
-    'Grains & Cereals': produce('brown_rice.jpg'),
-    'Legumes & Pulses': produce('legumes.jpg'),
-    'Tuber & Roots': produce('sweet_potatoes.jpg'),
-    'Fresh Proteins': produce('eggs.jpg'),
-    'Oils': produce('oils.jpg'),
-  };
-
-  static String? forCategory(String name) => categories[name];
-
   /// Store profile imagery.
   static String get storeBanner => produce('store_banner.jpg');
   static String get storeLogo => produce('store_logo.jpg');

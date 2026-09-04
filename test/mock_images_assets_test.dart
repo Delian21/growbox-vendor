@@ -6,10 +6,9 @@ import 'package:growbox_vendor/data/mock/mock_images.dart';
 
 void main() {
   group('MockImages asset paths', () {
-    test('every product & category photo resolves to a real bundled file', () {
+    test('every product photo resolves to a real bundled file', () {
       final assetPaths = <String>[
         ...MockImages.products.values,
-        ...MockImages.categories.values,
         MockImages.storeBanner,
         MockImages.storeLogo,
       ];

@@ -8,7 +8,6 @@ import '../../core/utils/formatters.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/shimmer_loader.dart';
-import '../../data/mock/mock_images.dart';
 
 enum _DateRange { all, week, twoWeeks, month }
 
@@ -563,10 +562,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // Legend swatch for the category list: category photo layered over the
-  // category colour (used as fallback while loading / on failure).
+  // Legend swatch for the category list: a solid rounded square in the
+  // category colour, matching the pie slice colour.
   Widget _buildCategoryLegendIcon(_CategoryData cat) {
-    final imageUrl = MockImages.forCategory(cat.label);
     return Container(
       width: 20,
       height: 20,
@@ -574,17 +572,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(
         color: cat.color,
         borderRadius: BorderRadius.circular(6),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (imageUrl != null)
-            Image.asset(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-        ],
       ),
     );
   }
