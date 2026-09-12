@@ -84,15 +84,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
+  // Single-hue ramp: strongest shade = biggest share, 'Others' neutral.
+  // Colour encodes rank, so the donut and its legend stay readable without
+  // eight unrelated hues competing for attention.
   static const _categoryData = [
-    _CategoryData(label: 'Vegetables', percentage: 30, color: AppColors.primary),
-    _CategoryData(label: 'Fruits', percentage: 20, color: AppColors.success),
-    _CategoryData(label: 'Grains & Cereals', percentage: 13, color: AppColors.warning),
-    _CategoryData(label: 'Legumes & Pulses', percentage: 10, color: AppColors.info),
-    _CategoryData(label: 'Tuber & Roots', percentage: 8, color: AppColors.accent),
-    _CategoryData(label: 'Fresh Proteins', percentage: 6, color: AppColors.preparing),
-    _CategoryData(label: 'Oils', percentage: 8, color: AppColors.brandOrange),
-    _CategoryData(label: 'Others', percentage: 5, color: AppColors.ready),
+    _CategoryData(label: 'Vegetables', percentage: 30, color: Color(0xFF14532D)),
+    _CategoryData(label: 'Fruits', percentage: 20, color: Color(0xFF166534)),
+    _CategoryData(label: 'Grains & Cereals', percentage: 13, color: Color(0xFF15803D)),
+    _CategoryData(label: 'Legumes & Pulses', percentage: 10, color: Color(0xFF16A34A)),
+    _CategoryData(label: 'Tuber & Roots', percentage: 8, color: Color(0xFF22C55E)),
+    _CategoryData(label: 'Oils', percentage: 8, color: Color(0xFF4ADE80)),
+    _CategoryData(label: 'Fresh Proteins', percentage: 6, color: Color(0xFF86EFAC)),
+    _CategoryData(label: 'Others', percentage: 5, color: Color(0xFFCBD5D1)),
   ];
 
   @override
@@ -195,39 +198,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _StatCard(title: 'Rating', value: '4.8'),
     ];
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
-      child: _isRefreshing
-          ? Column(
-              key: const ValueKey('skeleton'),
-              children: [
-                const GrowboxCard(padding: EdgeInsets.all(20), child: StatCardSkeleton()),
-                const SizedBox(height: AppDimensions.lg),
-                Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Narrow screens: stack the secondary cards full-width instead of
+        // squeezing three columns into a phone row.
+        final stacked = constraints.maxWidth < 520;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          child: _isRefreshing
+              ? Column(
+                  key: const ValueKey('skeleton'),
                   children: [
-                    for (var i = 0; i < 3; i++) ...[
-                      if (i > 0) const SizedBox(width: AppDimensions.lg),
-                      const Expanded(child: GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton())),
-                    ],
+                    const GrowboxCard(padding: EdgeInsets.all(20), child: StatCardSkeleton()),
+                    const SizedBox(height: AppDimensions.lg),
+                    if (stacked)
+                      const Column(
+                        children: [
+                          GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton()),
+                          SizedBox(height: AppDimensions.lg),
+                          GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton()),
+                          SizedBox(height: AppDimensions.lg),
+                          GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton()),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          for (var i = 0; i < 3; i++) ...[
+                            if (i > 0) const SizedBox(width: AppDimensions.lg),
+                            const Expanded(child: GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton())),
+                          ],
+                        ],
+                      ),
+                  ],
+                )
+              : Column(
+                  key: const ValueKey('data'),
+                  children: [
+                    _buildPrimaryStatCard(context, primary, isDark),
+                    const SizedBox(height: AppDimensions.lg),
+                    if (stacked)
+                      Column(
+                        children: [
+                          for (var i = 0; i < secondary.length; i++) ...[
+                            if (i > 0) const SizedBox(height: AppDimensions.lg),
+                            _buildSecondaryStatCard(context, secondary[i], isDark),
+                          ],
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          for (var i = 0; i < secondary.length; i++) ...[
+                            if (i > 0) const SizedBox(width: AppDimensions.lg),
+                            Expanded(child: _buildSecondaryStatCard(context, secondary[i], isDark)),
+                          ],
+                        ],
+                      ),
                   ],
                 ),
-              ],
-            )
-          : Column(
-              key: const ValueKey('data'),
-              children: [
-                _buildPrimaryStatCard(context, primary, isDark),
-                const SizedBox(height: AppDimensions.lg),
-                Row(
-                  children: [
-                    for (var i = 0; i < secondary.length; i++) ...[
-                      if (i > 0) const SizedBox(width: AppDimensions.lg),
-                      Expanded(child: _buildSecondaryStatCard(context, secondary[i], isDark)),
-                    ],
-                  ],
-                ),
-              ],
-            ),
+        );
+      },
     );
   }
 
@@ -668,7 +699,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             height: 180,
             child: PieChart(
               PieChartData(
-                sectionsSpace: 4,
+                sectionsSpace: 2,
                 centerSpaceRadius: 50,
                 sections: _categoryData.map((cat) {
                   return PieChartSectionData(
@@ -686,7 +717,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     badgeWidget: null,
                     titlePositionPercentageOffset: 0.55,
-                    borderSide: BorderSide.none,
+                    // Hairline in the card's surface colour — keeps adjacent
+                    // ramp shades distinguishable without adding new hues.
+                    borderSide: BorderSide(
+                      color: isDark ? AppColors.darkSurface : AppColors.secondarySurface,
+                      width: 2,
+                    ),
                   );
                 }).toList(),
               ),
@@ -822,7 +858,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: AppDimensions.sm),
               Row(
                 children: [
-                  Text(order.amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                  Text(order.amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
                   const Spacer(),
                   Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
                 ],
@@ -891,10 +927,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ── QUICK ACTIONS — compact bento (vertical stack for right column) ──
   Widget _buildQuickActionsBento(BuildContext context, bool isDark) {
     final actions = [
-      _QuickAction(icon: Icons.add_shopping_cart_outlined, label: 'Add Product', route: '/products', color: AppColors.primary, bgColor: AppColors.primarySurface),
-      _QuickAction(icon: Icons.receipt_long_outlined, label: 'View Orders', route: '/orders', color: AppColors.info, bgColor: AppColors.infoLight),
-      _QuickAction(icon: Icons.bar_chart_outlined, label: 'Sales Report', route: '/sales', color: AppColors.success, bgColor: AppColors.successLight),
-      _QuickAction(icon: Icons.store_outlined, label: 'My Store', route: '/store', color: AppColors.warning, bgColor: AppColors.warningLight),
+      _QuickAction(icon: Icons.add_shopping_cart_outlined, label: 'Add Product', route: '/products'),
+      _QuickAction(icon: Icons.receipt_long_outlined, label: 'View Orders', route: '/orders'),
+      _QuickAction(icon: Icons.bar_chart_outlined, label: 'Sales Report', route: '/sales'),
+      _QuickAction(icon: Icons.store_outlined, label: 'My Store', route: '/store'),
     ];
 
     return GrowboxCard(
@@ -918,12 +954,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurfaceVariant : action.bgColor.withValues(alpha: 0.5),
+                    color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
                     borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
                   ),
                   child: Row(
                     children: [
-                      Icon(action.icon, size: 18, color: action.color),
+                      Icon(action.icon, size: 18, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(action.label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
@@ -956,8 +992,7 @@ class _OrderItem {
 class _QuickAction {
   final IconData icon;
   final String label, route;
-  final Color color, bgColor;
-  _QuickAction({required this.icon, required this.label, required this.route, required this.color, required this.bgColor});
+  _QuickAction({required this.icon, required this.label, required this.route});
 }
 
 class _ChartData {
