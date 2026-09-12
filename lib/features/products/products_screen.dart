@@ -329,6 +329,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
+          // Slight dark scrim so the translucent actions disc stays legible
+          // on bright photos.
+          if (actions != null)
+            const DecoratedBox(
+              decoration: BoxDecoration(color: Color(0x33000000)),
+            ),
           if (actions != null)
             Positioned(
               top: 6,

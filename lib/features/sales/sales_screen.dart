@@ -123,8 +123,11 @@ class SalesScreen extends StatelessWidget {
                   width: cardWidth,
                   child: _buildSummaryCard(context, card, isDark),
                 )),
+                // At 2 columns stretch it across the full row so there's no
+                // orphaned empty cell; at 3 columns the row already fills
+                // with single-width cards.
                 SizedBox(
-                  width: cardWidth,
+                  width: columns == 2 ? cardWidth * 2 + AppDimensions.lg : cardWidth,
                   height: 124.5,
                   child: _buildOrderStatusDoughnut(context, isDark, summary),
                 ),
@@ -399,7 +402,7 @@ class SalesScreen extends StatelessWidget {
               ),
             ],
           ),
-          // Donut chart positioned on the right, vertically centered
+          // Donut chart pinned to the far right of the full-width card
           Positioned(
             right: 0,
             top: 0,
