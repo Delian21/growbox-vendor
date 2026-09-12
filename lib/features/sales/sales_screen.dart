@@ -92,43 +92,44 @@ class SalesScreen extends StatelessWidget {
     );
     final sparkSpots = _sparkSpots(provider.transactions, provider.selectedPeriod);
     final sparkDelta = _sparkDelta(sparkSpots);
-    final secondary = [
-      _SummaryCard(title: 'Vendor Earnings', value: formatCurrency(summary.vendorEarnings)),
-      _SummaryCard(title: 'Commission', value: formatCurrency(summary.growboxCommission)),
+    final cards = [
       _SummaryCard(
-        title: 'Completed Orders',
-        value: '${summary.completedOrders}/${summary.totalOrders}',
+        title: 'Vendor Earnings',
+        value: formatCurrency(summary.vendorEarnings),
+        icon: Icons.savings_outlined,
+      ),
+      _SummaryCard(
+        title: 'Commission',
+        value: formatCurrency(summary.growboxCommission),
+        icon: Icons.payments_outlined,
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Narrow screens: stack the secondary cards full-width instead of
-        // squeezing three columns into a phone row.
-        final stacked = constraints.maxWidth < 520;
+        final columns = constraints.maxWidth > 900 ? 3 : 2;
+        final cardWidth = (constraints.maxWidth - (columns - 1) * 16) / columns;
+
         return Column(
           children: [
             _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
                 provider.selectedPeriod),
             const SizedBox(height: AppDimensions.lg),
-            if (stacked)
-              Column(
-                children: [
-                  for (var i = 0; i < secondary.length; i++) ...[
-                    if (i > 0) const SizedBox(height: AppDimensions.lg),
-                    _buildSecondaryCard(context, secondary[i], isDark),
-                  ],
-                ],
-              )
-            else
-              Row(
-                children: [
-                  for (var i = 0; i < secondary.length; i++) ...[
-                    if (i > 0) const SizedBox(width: AppDimensions.lg),
-                    Expanded(child: _buildSecondaryCard(context, secondary[i], isDark)),
-                  ],
-                ],
-              ),
+            Wrap(
+              spacing: AppDimensions.lg,
+              runSpacing: AppDimensions.lg,
+              children: [
+                ...cards.map((card) => SizedBox(
+                  width: cardWidth,
+                  child: _buildSummaryCard(context, card, isDark),
+                )),
+                SizedBox(
+                  width: cardWidth,
+                  height: 124.5,
+                  child: _buildOrderStatusDoughnut(context, isDark, summary),
+                ),
+              ],
+            ),
           ],
         );
       },
@@ -299,25 +300,34 @@ class SalesScreen extends StatelessWidget {
     return spots;
   }
 
-  // Secondary metrics — quiet supporting numbers.
-  Widget _buildSecondaryCard(BuildContext context, _SummaryCard card, bool isDark) {
+  Widget _buildSummaryCard(BuildContext context, _SummaryCard card, bool isDark) {
     return GrowboxCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              card.value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                height: 1.1,
-              ),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.darkSurfaceVariant
+                  : AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              card.icon,
+              size: 18,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            card.value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 2),
@@ -326,8 +336,112 @@ class SalesScreen extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 12,
               color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── ORDER STATUS DOUGHNUT ──
+  Widget _buildOrderStatusDoughnut(
+    BuildContext context,
+    bool isDark,
+    SalesSummary summary,
+  ) {
+    final completed = summary.completedOrders.toDouble();
+    final total = summary.totalOrders > 0 ? summary.totalOrders.toDouble() : 1.0;
+    final pending = total - completed;
+    final pct = total > 0 ? (completed / total * 100).round() : 0;
+
+    return GrowboxCard(
+      padding: const EdgeInsets.all(14),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Icon + label (same structure as other cards)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkSurfaceVariant
+                      : AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.pie_chart_outline,
+                  size: 18,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${summary.completedOrders}/${summary.totalOrders}',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Completed Orders',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          // Donut chart positioned on the right, vertically centered
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: SizedBox(
+                height: 56,
+                width: 56,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 18,
+                        sections: [
+                          PieChartSectionData(
+                            value: completed,
+                            color: AppColors.success,
+                            radius: 8,
+                            title: '',
+                          ),
+                          PieChartSectionData(
+                            value: pending,
+                            color: isDark ? AppColors.darkBorder : AppColors.border,
+                            radius: 8,
+                            title: '',
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '$pct%',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -746,10 +860,12 @@ class SalesScreen extends StatelessWidget {
 class _SummaryCard {
   final String title;
   final String value;
+  final IconData icon;
 
   const _SummaryCard({
     required this.title,
     required this.value,
+    this.icon = Icons.payments_outlined,
   });
 }
 

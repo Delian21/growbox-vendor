@@ -287,7 +287,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   // Renders the product photo with the original gradient + icon layered
   // underneath, so the fallback shows while loading or if the network image
-  // fails to load.
+  // fails to load. An optional overlay [actions] widget sits top-right on
+  // the image (e.g. the product actions menu).
   Widget _buildProductImage({
     required String? imageUrl,
     required List<Color> gradientColors,
@@ -295,6 +296,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     required bool isDark,
     required double iconSize,
     BorderRadius? borderRadius,
+    Widget? actions,
   }) {
     return Container(
       width: double.infinity,
@@ -327,8 +329,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
+          if (actions != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: actions,
+            ),
         ],
       ),
+    );
+  }
+
+  // Translucent white disc around the vertical-dots menu, for use on top of
+  // product imagery.
+  Widget _buildImageActionsOverlay(BuildContext context, ProductItem p, bool isDark) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0x99FFFFFF),
+        shape: BoxShape.circle,
+      ),
+      child: _buildActionsMenu(context, p, isDark),
     );
   }
 
@@ -349,16 +369,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(flex: 3, child: _buildProductImage(imageUrl: p.imageUrl, gradientColors: p.gradientColors, icon: p.icon, isDark: isDark, iconSize: 48, borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusLg)))),
+          Expanded(
+            flex: 3,
+            child: _buildProductImage(
+              imageUrl: p.imageUrl,
+              gradientColors: p.gradientColors,
+              icon: p.icon,
+              isDark: isDark,
+              iconSize: 48,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusLg)),
+              actions: _buildImageActionsOverlay(context, p, isDark),
+            ),
+          ),
           Expanded(flex: 2, child: Padding(
             padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm, AppDimensions.md, AppDimensions.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Expanded(child: Text(p.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  _buildActionsMenu(context, p, isDark),
-                ]),
+                // Full-width name — the actions menu moved onto the image.
+                Text(p.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
                 Text(p.category, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
                 const Spacer(),

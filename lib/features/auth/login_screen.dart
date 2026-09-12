@@ -108,6 +108,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             hint: 'vendor@growbox.com',
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
+                            suggestEmailDomains: true,
+                            autofocus: true,
                             prefix: const Icon(Icons.email_outlined, size: 20),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {

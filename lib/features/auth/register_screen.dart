@@ -134,6 +134,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             hint: 'vendor@growbox.com',
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
+                            suggestEmailDomains: true,
                             prefix: const Icon(Icons.email_outlined, size: 20),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {

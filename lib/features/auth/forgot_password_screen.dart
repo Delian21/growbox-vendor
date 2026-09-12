@@ -118,6 +118,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             hint: 'vendor@example.com',
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
+                            suggestEmailDomains: true,
+                            autofocus: true,
                             prefix: const Icon(Icons.contact_mail_outlined, size: 20),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
