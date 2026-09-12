@@ -84,18 +84,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
-  // Single-hue ramp: strongest shade = biggest share, 'Others' neutral.
-  // Colour encodes rank, so the donut and its legend stay readable without
-  // eight unrelated hues competing for attention.
+  // One distinct hue per category, chosen to echo the produce itself
+  // (vegetables green, fruits orange, grains gold, proteins red, ...).
+  // All eight are mutually distinguishable — unlike the old palette, which
+  // mapped two categories to the exact same colour. 'Others' stays neutral.
   static const _categoryData = [
-    _CategoryData(label: 'Vegetables', percentage: 30, color: Color(0xFF14532D)),
-    _CategoryData(label: 'Fruits', percentage: 20, color: Color(0xFF166534)),
-    _CategoryData(label: 'Grains & Cereals', percentage: 13, color: Color(0xFF15803D)),
-    _CategoryData(label: 'Legumes & Pulses', percentage: 10, color: Color(0xFF16A34A)),
-    _CategoryData(label: 'Tuber & Roots', percentage: 8, color: Color(0xFF22C55E)),
-    _CategoryData(label: 'Oils', percentage: 8, color: Color(0xFF4ADE80)),
-    _CategoryData(label: 'Fresh Proteins', percentage: 6, color: Color(0xFF86EFAC)),
-    _CategoryData(label: 'Others', percentage: 5, color: Color(0xFFCBD5D1)),
+    _CategoryData(label: 'Vegetables', percentage: 30, color: Color(0xFF22A064)),
+    _CategoryData(label: 'Fruits', percentage: 20, color: Color(0xFFE07B39)),
+    _CategoryData(label: 'Grains & Cereals', percentage: 13, color: Color(0xFFEAB308)),
+    _CategoryData(label: 'Legumes & Pulses', percentage: 10, color: Color(0xFF8B5CF6)),
+    _CategoryData(label: 'Tuber & Roots', percentage: 8, color: Color(0xFFB45309)),
+    _CategoryData(label: 'Oils', percentage: 8, color: Color(0xFF0891B2)),
+    _CategoryData(label: 'Fresh Proteins', percentage: 6, color: Color(0xFFDC2626)),
+    _CategoryData(label: 'Others', percentage: 5, color: Color(0xFF94A3B8)),
   ];
 
   @override
@@ -190,7 +191,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final primary = _StatCard(
       title: 'Total Revenue',
       value: formatCurrency(2450000),
-      change: '+12.5%',
     );
     const secondary = [
       _StatCard(title: 'Orders', value: '156'),
@@ -263,7 +263,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Primary metric — the one thing the eye should land on.
+  // A quiet sparkline sits beside the number, showing the trend's shape
+  // instead of a coloured badge.
   Widget _buildPrimaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
+    final sparkWindow = _salesOverviewData.length > 7
+        ? _salesOverviewData.sublist(_salesOverviewData.length - 7)
+        : _salesOverviewData;
+    final spots = [
+      for (var i = 0; i < sparkWindow.length; i++) FlSpot(i.toDouble(), sparkWindow[i].amount),
+    ];
+    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+
     return GrowboxCard(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -280,7 +291,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 6),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: FittedBox(
@@ -298,26 +309,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
-              if (stat.change != null) ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.success.withValues(alpha: 0.15)
-                        : AppColors.successLight,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    stat.change!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppColors.darkPrimary : AppColors.success,
-                    ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 96,
+                height: 36,
+                child: LineChart(
+                  LineChartData(
+                    minY: minY * 0.96,
+                    maxY: maxY * 1.04,
+                    lineTouchData: LineTouchData(enabled: false),
+                    gridData: const FlGridData(show: false),
+                    titlesData: const FlTitlesData(show: false),
+                    borderData: FlBorderData(show: false),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        color: isDark ? AppColors.darkPrimary : AppColors.success,
+                        barWidth: 2,
+                        isStrokeCapRound: true,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(show: false),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ],
@@ -980,8 +997,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // ── HELPER CLASSES ──
 class _StatCard {
   final String title, value;
-  final String? change;
-  const _StatCard({required this.title, required this.value, this.change});
+  const _StatCard({required this.title, required this.value});
 }
 
 class _OrderItem {
