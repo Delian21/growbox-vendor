@@ -90,6 +90,8 @@ class SalesScreen extends StatelessWidget {
       title: 'Total Sales',
       value: formatCurrency(summary.totalSales),
     );
+    final sparkSpots = _sparkSpots(provider.transactions, provider.selectedPeriod);
+    final sparkDelta = _sparkDelta(sparkSpots);
     final secondary = [
       _SummaryCard(title: 'Vendor Earnings', value: formatCurrency(summary.vendorEarnings)),
       _SummaryCard(title: 'Commission', value: formatCurrency(summary.growboxCommission)),
@@ -106,7 +108,8 @@ class SalesScreen extends StatelessWidget {
         final stacked = constraints.maxWidth < 520;
         return Column(
           children: [
-            _buildPrimaryCard(context, primary, isDark),
+            _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
+                provider.selectedPeriod),
             const SizedBox(height: AppDimensions.lg),
             if (stacked)
               Column(
@@ -133,7 +136,20 @@ class SalesScreen extends StatelessWidget {
   }
 
   // Primary metric — the one thing the eye should land on.
-  Widget _buildPrimaryCard(BuildContext context, _SummaryCard card, bool isDark) {
+  // Sparkline + delta badge mirror the dashboard hero and follow the
+  // selected period filter.
+  Widget _buildPrimaryCard(
+    BuildContext context,
+    _SummaryCard card,
+    bool isDark,
+    List<FlSpot> sparkSpots,
+    double? sparkDelta,
+    String period,
+  ) {
+    final hasSpark = sparkSpots.length >= 2;
+    final minY = hasSpark ? sparkSpots.map((s) => s.y).reduce((a, b) => a < b ? a : b) : 0.0;
+    final maxY = hasSpark ? sparkSpots.map((s) => s.y).reduce((a, b) => a > b ? a : b) : 1.0;
+
     return GrowboxCard(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -149,23 +165,138 @@ class SalesScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              card.value,
-              style: TextStyle(
-                fontSize: 34,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                height: 1.05,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    card.value,
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
               ),
+              if (hasSpark) ...[
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 96,
+                  height: 36,
+                  child: LineChart(
+                    LineChartData(
+                      minY: minY * 0.96,
+                      maxY: maxY * 1.04,
+                      lineTouchData: LineTouchData(enabled: false),
+                      gridData: const FlGridData(show: false),
+                      titlesData: const FlTitlesData(show: false),
+                      borderData: FlBorderData(show: false),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: sparkSpots,
+                          isCurved: true,
+                          color: isDark ? AppColors.darkPrimary : AppColors.success,
+                          barWidth: 2,
+                          isStrokeCapRound: true,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(show: false),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (sparkDelta != null) ...[
+            const SizedBox(height: 10),
+            _changeBadge(sparkDelta, isDark, period: period),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Green/red delta pill — trend arrow + change vs the previous bucket,
+  // matching the dashboard hero's badge style.
+  Widget _changeBadge(double deltaPct, bool isDark, {required String period}) {
+    final positive = deltaPct >= 0;
+    final color = positive
+        ? (isDark ? AppColors.darkPrimary : AppColors.success)
+        : AppColors.error;
+    final note = period == 'today' ? 'vs previous hour' : 'vs previous day';
+    final text =
+        '${positive ? '+' : ''}${deltaPct.toStringAsFixed(1)}% $note';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: positive
+            ? (isDark
+                ? AppColors.success.withValues(alpha: 0.15)
+                : AppColors.successLight)
+            : (isDark
+                ? AppColors.error.withValues(alpha: 0.15)
+                : AppColors.errorLight),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            positive ? Icons.trending_up : Icons.trending_down,
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
           ),
         ],
       ),
     );
+  }
+
+  // Change between the last two sparkline buckets, as a fraction (e.g.
+  // 0.125 for +12.5%). Null when it can't be computed.
+  double? _sparkDelta(List<FlSpot> spots) {
+    if (spots.length < 2) return null;
+    final prev = spots[spots.length - 2].y;
+    final last = spots.last.y;
+    if (prev <= 0) return null;
+    return (last - prev) / prev * 100;
+  }
+
+  // Period-aware revenue series for the sparkline: transactions bucketed by
+  // hour for 'today', by day otherwise. Refunds excluded.
+  List<FlSpot> _sparkSpots(List<TransactionRecord> txns, String period) {
+    final grouped = <String, double>{};
+    for (final t in txns) {
+      if (t.status == 'refunded') continue;
+      final d = t.date;
+      final key = period == 'today'
+          ? '${d.hour.toString().padLeft(2, '0')}:00'
+          : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      grouped[key] = (grouped[key] ?? 0) + t.totalAmount;
+    }
+    final keys = grouped.keys.toList()..sort();
+    if (keys.isEmpty) return const [];
+    final spots = [
+      for (var i = 0; i < keys.length; i++) FlSpot(i.toDouble(), grouped[keys[i]]!),
+    ];
+    // A single point draws nothing on a line chart — flatten it instead.
+    if (spots.length == 1) return [spots.first, FlSpot(1, spots.first.y)];
+    return spots;
   }
 
   // Secondary metrics — quiet supporting numbers.
@@ -301,7 +432,7 @@ class SalesScreen extends StatelessWidget {
                       BarChartRodData(
                         toY: entry.value.amount,
                         color: AppColors.primary,
-                        width: 28,
+                        width: 10,
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(AppDimensions.radiusSm),
                         ),

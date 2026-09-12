@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/category_colors.dart';
 import '../../shared/widgets/growbox_button.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
@@ -183,7 +184,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
             separatorBuilder: (_, _) => const SizedBox(width: AppDimensions.sm),
             itemBuilder: (context, index) {
               final isSelected = _selectedFilter == filters[index];
+              final categoryColor = CategoryColors.forCategory(filters[index]);
               return FilterChip(
+                avatar: categoryColor == null
+                    ? null
+                    : Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: categoryColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                 label: Text(filters[index]),
                 selected: isSelected,
                 onSelected: (_) => _onFilterChanged(filters[index]),
@@ -236,7 +248,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
               shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cols, crossAxisSpacing: AppDimensions.lg, mainAxisSpacing: AppDimensions.lg,
-                childAspectRatio: cols >= 4 ? 0.85 : (cols == 3 ? 0.7 : 0.65),
+                // Phone cards run taller so price + stock get real lines
+                // instead of being squeezed into an overflow.
+                childAspectRatio: cols >= 4 ? 0.82 : (cols == 3 ? 0.66 : 0.60),
               ),
               itemCount: visible.length,
               itemBuilder: (context, i) => AnimationConfiguration.staggeredGrid(
@@ -337,7 +351,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         children: [
           Expanded(flex: 3, child: _buildProductImage(imageUrl: p.imageUrl, gradientColors: p.gradientColors, icon: p.icon, isDark: isDark, iconSize: 48, borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusLg)))),
           Expanded(flex: 2, child: Padding(
-            padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm, AppDimensions.md, AppDimensions.md),
+            padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm, AppDimensions.md, AppDimensions.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -348,12 +362,33 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 const SizedBox(height: 2),
                 Text(p.category, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
                 const Spacer(),
-                Row(children: [
-                  FittedBox(fit: BoxFit.scaleDown, child: Text('\u20A6${p.price}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary))),
-                  Text('/${p.unit}', style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
-                  const Spacer(),
-                  Text('${p.stock} in stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: p.stock > 10 ? AppColors.success : AppColors.error)),
-                ]),
+                // Price and stock each get their own line — stacking them
+                // beats squeezing both onto one row on narrow cards.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text.rich(
+                    TextSpan(
+                      text: '\u20A6${p.price}',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkPrimary : AppColors.primary),
+                      children: [
+                        TextSpan(
+                          text: '/${p.unit}',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${p.stock} in stock',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: p.stock > 10 ? AppColors.success : AppColors.error,
+                  ),
+                ),
               ],
             ),
           )),
@@ -671,6 +706,14 @@ class _AddProductSheetState extends State<_AddProductSheet> {
           children: _allCategories.map((cat) {
             final selected = _selectedCategories.contains(cat);
             return FilterChip(
+              avatar: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: CategoryColors.forCategory(cat) ?? AppColors.textTertiary,
+                  shape: BoxShape.circle,
+                ),
+              ),
               label: Text(cat, style: TextStyle(fontSize: 13, color: selected ? Colors.white : (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary))),
               selected: selected,
               selectedColor: AppColors.primary,

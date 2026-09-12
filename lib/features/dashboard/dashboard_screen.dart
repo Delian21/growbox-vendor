@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
+import '../../core/constants/category_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_card.dart';
@@ -84,19 +85,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
-  // One distinct hue per category, chosen to echo the produce itself
-  // (vegetables green, fruits orange, grains gold, proteins red, ...).
-  // All eight are mutually distinguishable — unlike the old palette, which
-  // mapped two categories to the exact same colour. 'Others' stays neutral.
-  static const _categoryData = [
-    _CategoryData(label: 'Vegetables', percentage: 30, color: Color(0xFF22A064)),
-    _CategoryData(label: 'Fruits', percentage: 20, color: Color(0xFFE07B39)),
-    _CategoryData(label: 'Grains & Cereals', percentage: 13, color: Color(0xFFEAB308)),
-    _CategoryData(label: 'Legumes & Pulses', percentage: 10, color: Color(0xFF8B5CF6)),
-    _CategoryData(label: 'Tuber & Roots', percentage: 8, color: Color(0xFFB45309)),
-    _CategoryData(label: 'Oils', percentage: 8, color: Color(0xFF0891B2)),
-    _CategoryData(label: 'Fresh Proteins', percentage: 6, color: Color(0xFFDC2626)),
-    _CategoryData(label: 'Others', percentage: 5, color: Color(0xFF94A3B8)),
+  // Shares its palette with the products filter chips via CategoryColors —
+  // one hue per category, consistent app-wide.
+  static final _categoryData = [
+    for (final e in const {
+      'Vegetables': 30,
+      'Fruits': 20,
+      'Grains & Cereals': 13,
+      'Legumes & Pulses': 10,
+      'Tuber & Roots': 8,
+      'Oils': 8,
+      'Fresh Proteins': 6,
+      'Others': 5,
+    }.entries)
+      _CategoryData(
+        label: e.key,
+        percentage: e.value,
+        color: CategoryColors.forCategory(e.key)!,
+      ),
   ];
 
   @override
@@ -191,11 +197,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final primary = _StatCard(
       title: 'Total Revenue',
       value: formatCurrency(2450000),
+      change: '+12.5%',
+      changeNote: 'from last month',
     );
     const secondary = [
-      _StatCard(title: 'Orders', value: '156'),
-      _StatCard(title: 'Products', value: '42'),
-      _StatCard(title: 'Rating', value: '4.8'),
+      _StatCard(title: 'Orders', value: '156', change: '+8.2%'),
+      _StatCard(title: 'Products', value: '42', change: '+3'),
+      _StatCard(title: 'Rating', value: '4.8', change: '+0.2'),
     ];
 
     return LayoutBuilder(
@@ -337,42 +345,88 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
+          if (stat.change != null) ...[
+            const SizedBox(height: 10),
+            _changeBadge(stat.change!, isDark, note: stat.changeNote),
+          ],
         ],
       ),
     );
   }
 
-  // Secondary metrics — quiet supporting numbers.
+  // Green delta pill — trend arrow + change, optionally with a qualifier
+  // ("from last month").
+  Widget _changeBadge(String change, bool isDark, {String? note, bool isSmall = false}) {
+    final color = isDark ? AppColors.darkPrimary : AppColors.success;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: isSmall ? 6 : 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.success.withValues(alpha: 0.15)
+            : AppColors.successLight,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.trending_up, size: isSmall ? 10 : 12, color: color),
+          const SizedBox(width: 3),
+          Text(
+            note == null ? change : '$change $note',
+            style: TextStyle(
+              fontSize: isSmall ? 10 : 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Secondary metrics — label over number, delta badge on the right,
+  // mirroring the reference layout.
   Widget _buildSecondaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
     return GrowboxCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              stat.value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                height: 1.1,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  stat.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    stat.value,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            stat.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-            ),
-          ),
+          if (stat.change != null) ...[
+            const SizedBox(width: 8),
+            _changeBadge(stat.change!, isDark, isSmall: true),
+          ],
         ],
       ),
     );
@@ -997,7 +1051,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // ── HELPER CLASSES ──
 class _StatCard {
   final String title, value;
-  const _StatCard({required this.title, required this.value});
+  final String? change;
+  final String? changeNote;
+  const _StatCard({required this.title, required this.value, this.change, this.changeNote});
 }
 
 class _OrderItem {
