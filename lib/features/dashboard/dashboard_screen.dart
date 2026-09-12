@@ -182,99 +182,146 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ── STATS CARDS — 2x2 bento grid ──
+  // ── STATS — 1 primary metric, 3 secondary ──
   Widget _buildStatsGrid(BuildContext context, bool isDark) {
-    final stats = [
-      _StatCard(title: 'Total Revenue', value: formatCurrency(2450000), change: '+12.5%', isPositive: true, icon: Icons.account_balance_wallet_outlined, color: AppColors.primary, bgColor: AppColors.primarySurface),
-      _StatCard(title: 'Orders', value: '156', change: '+8.2%', isPositive: true, icon: Icons.shopping_bag_outlined, color: AppColors.info, bgColor: AppColors.infoLight),
-      _StatCard(title: 'Products', value: '42', change: '+3', isPositive: true, icon: Icons.inventory_2_outlined, color: AppColors.warning, bgColor: AppColors.warningLight),
-      _StatCard(title: 'Rating', value: '4.8', change: '+0.2', isPositive: true, icon: Icons.star_outline, color: AppColors.success, bgColor: AppColors.successLight),
+    final primary = _StatCard(
+      title: 'Total Revenue',
+      value: formatCurrency(2450000),
+      change: '+12.5%',
+    );
+    const secondary = [
+      _StatCard(title: 'Orders', value: '156'),
+      _StatCard(title: 'Products', value: '42'),
+      _StatCard(title: 'Rating', value: '4.8'),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 700 ? 4 : 2;
-        final itemWidth = (constraints.maxWidth - AppDimensions.lg * (columns - 1)) / columns;
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          child: _isRefreshing
-              ? Wrap(
-                  key: const ValueKey('skeleton'),
-                  spacing: AppDimensions.lg,
-                  runSpacing: AppDimensions.lg,
-                  children: List.generate(4, (_) => SizedBox(
-                    width: itemWidth,
-                    child: const GrowboxCard(
-                      padding: EdgeInsets.all(14),
-                      child: StatCardSkeleton(),
-                    ),
-                  )).toList(),
-                )
-              : Wrap(
-                  key: const ValueKey('data'),
-                  spacing: AppDimensions.lg,
-                  runSpacing: AppDimensions.lg,
-                  children: stats.map((stat) => SizedBox(
-                    width: itemWidth,
-                    child: _buildStatCard(context, stat, isDark),
-                  )).toList(),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      child: _isRefreshing
+          ? Column(
+              key: const ValueKey('skeleton'),
+              children: [
+                const GrowboxCard(padding: EdgeInsets.all(20), child: StatCardSkeleton()),
+                const SizedBox(height: AppDimensions.lg),
+                Row(
+                  children: [
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(width: AppDimensions.lg),
+                      const Expanded(child: GrowboxCard(padding: EdgeInsets.all(14), child: StatCardSkeleton())),
+                    ],
+                  ],
                 ),
-        );
-      },
+              ],
+            )
+          : Column(
+              key: const ValueKey('data'),
+              children: [
+                _buildPrimaryStatCard(context, primary, isDark),
+                const SizedBox(height: AppDimensions.lg),
+                Row(
+                  children: [
+                    for (var i = 0; i < secondary.length; i++) ...[
+                      if (i > 0) const SizedBox(width: AppDimensions.lg),
+                      Expanded(child: _buildSecondaryStatCard(context, secondary[i], isDark)),
+                    ],
+                  ],
+                ),
+              ],
+            ),
     );
   }
 
-  Widget _buildStatCard(BuildContext context, _StatCard stat, bool isDark) {
+  // Primary metric — the one thing the eye should land on.
+  Widget _buildPrimaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
     return GrowboxCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
+          Text(
+            stat.title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: stat.bgColor,
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                ),
-                child: Icon(stat.icon, size: 17, color: stat.color),
-              ),
-              const Spacer(),
-              Text(
-                stat.change,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: stat.isPositive ? AppColors.success : AppColors.error,
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    stat.value,
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      height: 1.05,
+                    ),
+                  ),
                 ),
               ),
+              if (stat.change != null) ...[
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.success.withValues(alpha: 0.15)
+                        : AppColors.successLight,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    stat.change!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkPrimary : AppColors.success,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  // Secondary metrics — quiet supporting numbers.
+  Widget _buildSecondaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
+    return GrowboxCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
               stat.value,
               style: TextStyle(
-                fontSize: 22,
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                 height: 1.1,
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             stat.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
             ),
           ),
@@ -896,11 +943,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 // ── HELPER CLASSES ──
 class _StatCard {
-  final String title, value, change;
-  final bool isPositive;
-  final IconData icon;
-  final Color color, bgColor;
-  _StatCard({required this.title, required this.value, required this.change, required this.isPositive, required this.icon, required this.color, required this.bgColor});
+  final String title, value;
+  final String? change;
+  const _StatCard({required this.title, required this.value, this.change});
 }
 
 class _OrderItem {
