@@ -186,6 +186,11 @@ class ProductDetailsScreen extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
+              // Dark scrim keeps any overlaid controls legible on bright
+              // photos (same treatment as the products list tiles).
+              const DecoratedBox(
+                decoration: BoxDecoration(color: Color(0x33000000)),
+              ),
             ],
           ),
         ),

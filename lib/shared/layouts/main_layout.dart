@@ -201,9 +201,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                         if (delta.abs() > 2) {
                           final scrollingDown = delta > 0;
                           final atTop = currentPixels <= notification.metrics.minScrollExtent + 10;
+                          // Hide on any downward scroll; reveal again on the
+                          // first upward scroll — no need to reach the top.
                           if (_isDockVisible && scrollingDown && !atTop) {
                             setState(() => _isDockVisible = false);
-                          } else if (!_isDockVisible && atTop) {
+                          } else if (!_isDockVisible && (!scrollingDown || atTop)) {
                             setState(() => _isDockVisible = true);
                           }
                         }

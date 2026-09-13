@@ -169,7 +169,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Welcome back, Farm Fresh',
+                'Welcome back',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,

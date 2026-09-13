@@ -9,6 +9,7 @@ import '../../data/models/sales_data.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
+import '../../shared/widgets/growbox_responsive_grid.dart';
 
 class SalesScreen extends StatelessWidget {
   const SalesScreen({super.key});
@@ -105,37 +106,30 @@ class SalesScreen extends StatelessWidget {
       ),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 900 ? 3 : 2;
-        final cardWidth = (constraints.maxWidth - (columns - 1) * 16) / columns;
-
-        return Column(
-          children: [
-            _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
-                provider.selectedPeriod),
-            const SizedBox(height: AppDimensions.lg),
-            Wrap(
-              spacing: AppDimensions.lg,
-              runSpacing: AppDimensions.lg,
-              children: [
-                ...cards.map((card) => SizedBox(
-                  width: cardWidth,
-                  child: _buildSummaryCard(context, card, isDark),
-                )),
-                // At 2 columns stretch it across the full row so there's no
-                // orphaned empty cell; at 3 columns the row already fills
-                // with single-width cards.
-                SizedBox(
-                  width: columns == 2 ? cardWidth * 2 + AppDimensions.lg : cardWidth,
-                  height: 124.5,
-                  child: _buildOrderStatusDoughnut(context, isDark, summary),
-                ),
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
+            provider.selectedPeriod),
+        const SizedBox(height: AppDimensions.lg),
+        GrowboxResponsiveGrid(
+          items: [
+            ResponsiveGridItem(
+              _buildSummaryCard(context, cards[0], isDark),
+            ),
+            ResponsiveGridItem(
+              _buildSummaryCard(context, cards[1], isDark),
+            ),
+            // Full row on the narrow layout so there's no orphaned empty cell;
+            // at 3 columns it sits alongside the two single-span cards.
+            ResponsiveGridItem(
+              _buildOrderStatusDoughnut(context, isDark, summary),
+              narrowSpan: 2,
+              wideSpan: 1,
             ),
           ],
-        );
-      },
+        ),
+      ],
     );
   }
 

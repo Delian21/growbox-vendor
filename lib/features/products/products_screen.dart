@@ -347,14 +347,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   // Translucent white disc around the vertical-dots menu, for use on top of
-  // product imagery.
+  // product imagery. Sized to hug the icon so it doesn't eat into the photo.
   Widget _buildImageActionsOverlay(BuildContext context, ProductItem p, bool isDark) {
     return Container(
+      width: 28,
+      height: 28,
       decoration: const BoxDecoration(
         color: Color(0x99FFFFFF),
         shape: BoxShape.circle,
       ),
-      child: _buildActionsMenu(context, p, isDark),
+      child: _buildActionsMenu(context, p, isDark, padding: EdgeInsets.zero),
     );
   }
 
@@ -473,8 +475,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   // ── Actions menu (Edit / Delete) ──
-  Widget _buildActionsMenu(BuildContext context, ProductItem p, bool isDark) {
+  Widget _buildActionsMenu(
+    BuildContext context,
+    ProductItem p,
+    bool isDark, {
+    EdgeInsetsGeometry padding = const EdgeInsets.all(8),
+  }) {
     return PopupMenuButton<String>(
+      padding: padding,
       icon: Icon(
         Icons.more_vert,
         size: 18,
