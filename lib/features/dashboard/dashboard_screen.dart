@@ -130,8 +130,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               children: [
-                // ── Row 1: Welcome ──
-                _buildWelcomeHeader(context, isDark),
+                // ── Row 1: Subtitle (welcome title removed) ──
+                _buildSubtitleHeader(context, isDark),
                 const SizedBox(height: AppDimensions.xl),
 
                 // ── Row 2: Stats — 4-card bento grid ──
@@ -159,32 +159,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() => _isRefreshing = false);
   }
 
-  // ── WELCOME HEADER ──
-  Widget _buildWelcomeHeader(BuildContext context, bool isDark) {
+  // ── SUBTITLE HEADER — status line above the stats (welcome title removed) ──
+  Widget _buildSubtitleHeader(BuildContext context, bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome back',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "Here's what's happening with your store today",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                ),
-              ),
-            ],
+          child: Text(
+            "Here's what's happening with your store today",
+            style: TextStyle(
+              fontSize: 14,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
           ),
         ),
         const GrowboxBadge(label: 'Online', backgroundColor: AppColors.successLight, textColor: AppColors.success),
