@@ -390,7 +390,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           ),
           Expanded(flex: 2, child: Padding(
-            padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm, AppDimensions.md, AppDimensions.sm),
+            padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm + 2, AppDimensions.md, AppDimensions.lg + 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -450,7 +450,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
         child: Padding(
           padding: const EdgeInsets.only(bottom: AppDimensions.md),
           child: GrowboxCard(
-            padding: const EdgeInsets.all(AppDimensions.lg),
+            padding: const EdgeInsets.fromLTRB(
+              AppDimensions.lg,
+              AppDimensions.lg,
+              AppDimensions.lg,
+              AppDimensions.lg + 4,
+            ),
             child: Row(
               children: [
                 SizedBox(width: 64, height: 64, child: _buildProductImage(imageUrl: p.imageUrl, gradientColors: p.gradientColors, icon: p.icon, isDark: isDark, iconSize: 28, borderRadius: BorderRadius.circular(AppDimensions.radiusMd))),
