@@ -249,8 +249,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cols, crossAxisSpacing: AppDimensions.lg, mainAxisSpacing: AppDimensions.lg,
                 // Phone cards run taller so price + stock get real lines
-                // instead of being squeezed into an overflow.
-                childAspectRatio: cols >= 4 ? 0.82 : (cols == 3 ? 0.66 : 0.60),
+                // instead of being squeezed into an overflow. Ratios loosened
+                // when the info section gained bottom padding, so the extra
+                // height lands on the info half, not the photo — 0.52 keeps a
+                // 78px content block inside a 360px-wide phone card.
+                childAspectRatio: cols >= 4 ? 0.78 : (cols == 3 ? 0.62 : 0.52),
               ),
               itemCount: visible.length,
               itemBuilder: (context, i) => AnimationConfiguration.staggeredGrid(
@@ -377,8 +380,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 5:4 split (was 3:2) — the info block now carries ~20px of
+          // bottom padding, so it gets the larger share of the rebalance.
           Expanded(
-            flex: 3,
+            flex: 5,
             child: _buildProductImage(
               imageUrl: p.imageUrl,
               gradientColors: p.gradientColors,
@@ -389,7 +394,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               actions: _buildImageActionsOverlay(context, p, isDark),
             ),
           ),
-          Expanded(flex: 2, child: Padding(
+          Expanded(flex: 4, child: Padding(
             padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm + 2, AppDimensions.md, AppDimensions.lg + 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,7 +402,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // Full-width name — the actions menu moved onto the image.
                 Text(p.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
-                Text(p.category, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+                Text(p.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
                 const Spacer(),
                 // Price and stock each get their own line — stacking them
                 // beats squeezing both onto one row on narrow cards.

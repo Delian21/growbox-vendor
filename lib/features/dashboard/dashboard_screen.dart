@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/category_colors.dart';
 import '../../core/utils/formatters.dart';
+import '../../app/providers/sales_provider.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/shimmer_loader.dart';
@@ -31,6 +35,9 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   _DateRange _selectedRange = _DateRange.all;
   bool _isRefreshing = false;
+
+  // Index of the highlighted Sales-by-Category ring segment (null = idle).
+  int? _selectedCategory;
 
   // ── MOCK CHART DATA ──
   static const _salesOverviewData = [
@@ -373,6 +380,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Secondary metrics — label over number, delta badge on the right,
   // mirroring the reference layout.
   Widget _buildSecondaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
+    // The rating has a natural ceiling (5), so it renders as an arc gauge
+    // instead of the plain value row.
+    if (stat.title == 'Rating') return _buildRatingStatCard(context, stat, isDark);
     return GrowboxCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
@@ -418,6 +428,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ── RATING STAT — arc gauge, because a score has a real ceiling ──
+  Widget _buildRatingStatCard(BuildContext context, _StatCard stat, bool isDark) {
+    final value = double.tryParse(stat.value) ?? 0;
+    return GrowboxCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  stat.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (stat.change != null) _changeBadge(stat.change!, isDark, isSmall: true),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _RatingGauge(value: value, maxValue: 5, isDark: isDark),
+        ],
+      ),
+    );
+  }
+
   // ── BENTO CHARTS ROW — sales chart left, category + quick actions right ──
   Widget _buildBentoChartsRow(BuildContext context, bool isDark) {
     return LayoutBuilder(
@@ -450,7 +494,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Mobile: stack everything
         return Column(
           children: [
-            _buildSalesOverviewChart(context, isDark),
+            _buildSalesOverviewChart(context, isDark, isNarrow: true),
             const SizedBox(height: AppDimensions.lg),
             _buildSalesByCategoryChart(context, isDark),
             const SizedBox(height: AppDimensions.lg),
@@ -462,10 +506,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ── SALES OVERVIEW LINE CHART (dual-line) ──
-  Widget _buildSalesOverviewChart(BuildContext context, bool isDark) {
+  Widget _buildSalesOverviewChart(BuildContext context, bool isDark, {bool isNarrow = false}) {
     final filteredData = _filteredSalesData;
     final maxSales = filteredData.map((d) => d.amount).reduce((a, b) => a > b ? a : b);
     final maxOrders = filteredData.map((d) => d.orders).reduce((a, b) => a > b ? a : b);
+
+    // "Nice" axis top: a 10k-rounded step ≈ top/3, then round the top up to
+    // it — the sales axis lands on clean ticks (₦40k/₦80k/₦120k for this
+    // data) instead of fl_chart's uneven auto intervals.
+    final axisTop = maxSales * 1.15;
+    final axisSteps = (axisTop / 3 / 10000).ceil();
+    final axisStep = (axisSteps < 1 ? 1 : axisSteps) * 10000.0;
+    final axisMaxY = (axisTop / axisStep).ceil() * axisStep;
 
     return GrowboxCard(
       child: Column(
@@ -549,10 +601,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 30,
-                      interval: (filteredData.length / 5).ceilToDouble(),
+                      // Narrow screens: 3 date ticks instead of 5 so
+                      // labels have room and can't collide.
+                      interval: (filteredData.length / (isNarrow ? 3 : 5)).ceilToDouble(),
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
-                        final interval = (filteredData.length / 5).ceil();
+                        final interval = (filteredData.length / (isNarrow ? 3 : 5)).ceil();
                         if (index >= 0 && index < filteredData.length && index % interval == 0) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
@@ -573,6 +627,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 50,
+                      interval: axisStep,
                       getTitlesWidget: (value, meta) {
                         if (value == 0) return const Text('');
                         return Text(
@@ -585,26 +640,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
                   ),
-                  rightTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      getTitlesWidget: (value, meta) {
-                        if (value == 0) return const Text('');
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                  // Right axis removed: orders are scaled into the sales
+                  // axis, so it only printed raw copies of the ₦ labels
+                  // while costing the plot 40px of width.
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
                 borderData: FlBorderData(show: false),
                 minY: 0,
-                maxY: maxSales * 1.15,
+                maxY: axisMaxY,
                 extraLinesData: const ExtraLinesData(),
                 lineBarsData: [
                   // ── Sales line (green, solid, area fill) ──
@@ -616,8 +659,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppColors.primary,
                     barWidth: 2.5,
                     isStrokeCapRound: true,
+                    // Narrow screens: no per-point dots — 62 of them in
+                    // ~240px read as a bead curtain. Touch still works.
                     dotData: FlDotData(
-                      show: true,
+                      show: !isNarrow,
                       getDotPainter: (spot, percent, barData, index) {
                         return FlDotCirclePainter(
                           radius: 3,
@@ -652,7 +697,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     isStrokeCapRound: true,
                     dashArray: [6, 4],
                     dotData: FlDotData(
-                      show: true,
+                      show: !isNarrow,
                       getDotPainter: (spot, percent, barData, index) {
                         return FlDotCirclePainter(
                           radius: 3,
@@ -736,8 +781,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ── SALES BY CATEGORY PIE CHART ──
+  // ── CATEGORY RING INTERACTION ──
+  void _toggleCategoryAt(Offset pos, Size size) {
+    final hit = _categoryHitTest(pos, size);
+    setState(() => _selectedCategory = hit == _selectedCategory ? null : hit);
+  }
+
+  void _hoverCategoryAt(Offset pos, Size size) {
+    final hit = _categoryHitTest(pos, size);
+    if (hit != _selectedCategory) setState(() => _selectedCategory = hit);
+  }
+
+  void _clearCategory() {
+    if (_selectedCategory != null) setState(() => _selectedCategory = null);
+  }
+
+  // Mirrors _RingDonutPainter's geometry so taps land on the right slice.
+  int? _categoryHitTest(Offset pos, Size size) {
+    final center = size.center(Offset.zero);
+    final midRadius = size.shortestSide / 2 - 2 - _RingDonutPainter.strokeWidth / 2;
+    final delta = pos - center;
+    final distance = delta.distance;
+    if (distance < midRadius - _RingDonutPainter.strokeWidth / 2 - 8 ||
+        distance > midRadius + _RingDonutPainter.strokeWidth / 2 + 8) {
+      return null; // inside the hole or outside the ring
+    }
+    // 0° at 12 o'clock, growing clockwise — same frame as paint().
+    final degrees = (math.atan2(delta.dy, delta.dx) * 180 / math.pi + 90) % 360;
+    final scale = _RingDonutPainter.sweepScale(_categoryData.length);
+    var cursor = 0.0;
+    for (var i = 0; i < _categoryData.length; i++) {
+      final sweep = _categoryData[i].percentage * 3.6 * scale;
+      if (degrees >= cursor && degrees < cursor + sweep) return i;
+      cursor += sweep + _RingDonutPainter.gapDegrees;
+    }
+    return null; // tapped a gap
+  }
+
+  // Info chip shown top-left while a segment is selected — mirrors the
+  // reference: category name, then its value and percent secondary.
+  Widget _buildCategoryChip(_CategoryData cat, double totalSales, bool isDark) {
+    final amount = (totalSales * cat.percentage) / 100.0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurfaceVariant : Colors.white,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.borderLight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: cat.color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            cat.label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${formatCurrency(amount)} (${cat.percentage}%)',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── SALES BY CATEGORY — RING DONUT (UI-Pro style) ──
+  // Idle: a clean rounded-cap ring with no labels. Hover (desktop) or
+  // tap (touch) a segment: the others dim and a value chip appears
+  // top-left; tap the gap or the same segment again to return to idle.
   Widget _buildSalesByCategoryChart(BuildContext context, bool isDark) {
+    final summary = context.watch<SalesProvider>().summary;
     return GrowboxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -753,62 +889,121 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: AppDimensions.lg),
           SizedBox(
-            height: 180,
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 2,
-                centerSpaceRadius: 50,
-                sections: _categoryData.map((cat) {
-                  return PieChartSectionData(
-                    value: cat.percentage.toDouble(),
-                    color: cat.color,
-                    radius: 32,
-                    title: '${cat.percentage}%',
-                    titleStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(color: Colors.black38, blurRadius: 3, offset: Offset(0, 1)),
-                      ],
+            height: 220,
+            // Explicit full width: without it the Stack shrink-wraps to the
+            // center KPI and the ring paints shoved against the card edge.
+            width: double.infinity,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final chartSize = constraints.biggest;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned.fill(
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        onHover: (e) => _hoverCategoryAt(e.localPosition, chartSize),
+                        onExit: (_) => _clearCategory(),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTapDown: (d) => _toggleCategoryAt(d.localPosition, chartSize),
+                          child: CustomPaint(
+                            key: const Key('sales-category-ring'),
+                            painter: _RingDonutPainter(
+                              categories: _categoryData,
+                              selected: _selectedCategory,
+                              isDark: isDark,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    badgeWidget: null,
-                    titlePositionPercentageOffset: 0.55,
-                    // Hairline in the card's surface colour — keeps adjacent
-                    // ramp shades distinguishable without adding new hues.
-                    borderSide: BorderSide(
-                      color: isDark ? AppColors.darkSurface : AppColors.secondarySurface,
-                      width: 2,
+                    // Center KPI stays constant (like the reference);
+                    // IgnorePointer keeps ring taps/hovers reaching the chart.
+                    IgnorePointer(
+                      child: SizedBox(
+                        width: 100,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                formatCurrency(summary.totalSales),
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Total Sales',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  );
-                }).toList(),
-              ),
+                    if (_selectedCategory != null)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: _buildCategoryChip(
+                          _categoryData[_selectedCategory!],
+                          summary.totalSales,
+                          isDark,
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: AppDimensions.md),
+          // Legend rows are tappable too — on phones a precise arc tap is
+          // fiddly, and the row gives the same select/deselect + chip flow.
           ..._categoryData.map((cat) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                _buildCategoryLegendIcon(cat),
-                const SizedBox(width: 8),
-                Text(
-                  cat.label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                  ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                onTap: () {
+                  final hit = _categoryData.indexOf(cat);
+                  setState(() {
+                    _selectedCategory = hit == _selectedCategory ? null : hit;
+                  });
+                },
+                child: Row(
+                  children: [
+                    _buildCategoryLegendIcon(cat),
+                    const SizedBox(width: 8),
+                    Text(
+                      cat.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${cat.percentage}%',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  '${cat.percentage}%',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                  ),
-                ),
-              ],
+              ),
             ),
           )),
         ],
@@ -1042,6 +1237,105 @@ class _StatCard {
   const _StatCard({required this.title, required this.value, this.change, this.changeNote});
 }
 
+/// Semicircular arc gauge: value swept left→right across its max, with the
+/// number sitting in the bowl. Only for metrics that have a real ceiling.
+class _RatingGauge extends StatelessWidget {
+  const _RatingGauge({
+    required this.value,
+    required this.maxValue,
+    required this.isDark,
+  });
+
+  final double value;
+  final double maxValue;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+    return SizedBox(
+      width: 72,
+      height: 36,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _ArcGaugePainter(
+                progress: progress,
+                trackColor: isDark ? AppColors.darkBorder : AppColors.borderLight,
+                valueColor: AppColors.primary,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text.rich(
+              TextSpan(
+                text: value % 1 == 0
+                    ? value.toStringAsFixed(0)
+                    : value.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  height: 1.1,
+                ),
+                children: [
+                  TextSpan(
+                    text: '/${maxValue.round()}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.darkTextTertiary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArcGaugePainter extends CustomPainter {
+  const _ArcGaugePainter({
+    required this.progress,
+    required this.trackColor,
+    required this.valueColor,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color valueColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 7.0;
+    final rect = Rect.fromCircle(
+      center: Offset(size.width / 2, size.height - stroke / 2),
+      radius: size.width / 2 - stroke / 2,
+    );
+    final base = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    // Upper semicircle: start angle π (left), sweeping clockwise over the top.
+    canvas.drawArc(rect, math.pi, math.pi, false, base..color = trackColor);
+    canvas.drawArc(rect, math.pi, math.pi * progress, false, base..color = valueColor);
+  }
+
+  @override
+  bool shouldRepaint(_ArcGaugePainter old) =>
+      old.progress != progress ||
+      old.trackColor != trackColor ||
+      old.valueColor != valueColor;
+}
+
 class _OrderItem {
   final String id, customer, items, amount, status, time;
   _OrderItem({required this.id, required this.customer, required this.items, required this.amount, required this.status, required this.time});
@@ -1065,4 +1359,73 @@ class _CategoryData {
   final int percentage;
   final Color color;
   const _CategoryData({required this.label, required this.percentage, required this.color});
+}
+
+// ── RING DONUT PAINTER — rounded-cap arcs over a faint track ──
+// fl_chart's pie draws filled wedges with sharp corners, so the UI-Pro
+// look (pill-shaped segment ends, no labels) is painted directly.
+class _RingDonutPainter extends CustomPainter {
+  /// Ring thickness in px; also drives the hit-test band in the screen.
+  static const double strokeWidth = 16;
+
+  /// Gap between segments in degrees — wide enough that the round caps
+  /// (which extend strokeWidth/2 past each arc end) don't touch.
+  static const double gapDegrees = 14;
+
+  final List<_CategoryData> categories;
+  final int? selected;
+  final bool isDark;
+
+  const _RingDonutPainter({
+    required this.categories,
+    required this.selected,
+    required this.isDark,
+  });
+
+  /// Percent → degrees after subtracting the fixed gaps.
+  static double sweepScale(int count) => (360 - gapDegrees * count) / 360;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final midRadius = size.shortestSide / 2 - 2 - strokeWidth / 2;
+    final arcRect = Rect.fromCircle(center: center, radius: midRadius);
+
+    // Faint full-circle track behind the segments (UI-Pro reference).
+    canvas.drawCircle(
+      center,
+      midRadius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = isDark ? Colors.white.withValues(alpha: 0.06) : AppColors.borderLight,
+    );
+
+    final scale = sweepScale(categories.length);
+    var startDegrees = -90.0; // 12 o'clock
+    for (var i = 0; i < categories.length; i++) {
+      final sweep = categories[i].percentage * 3.6 * scale;
+      final dimmed = selected != null && selected != i;
+      canvas.drawArc(
+        arcRect,
+        startDegrees * math.pi / 180,
+        sweep * math.pi / 180,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = strokeWidth
+          ..color = dimmed
+              ? categories[i].color.withValues(alpha: 0.26)
+              : categories[i].color,
+      );
+      startDegrees += sweep + gapDegrees;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingDonutPainter old) =>
+      old.selected != selected ||
+      old.isDark != isDark ||
+      old.categories != categories;
 }
