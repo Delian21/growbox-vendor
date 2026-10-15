@@ -32,12 +32,30 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   _DateRange _selectedRange = _DateRange.all;
   bool _isRefreshing = false;
 
   // Index of the highlighted Sales-by-Category ring segment (null = idle).
   int? _selectedCategory;
+
+  // Selection state as of the START of the current focus animation. The
+  // painter cross-fades every segment's dim amount between this value and
+  // _selectedCategory, so greying in/out animates instead of snapping.
+  int? _prevCategory;
+
+  // Drives the smooth color cross-fade when a segment is focused/unfocused.
+  late final AnimationController _ringFocus = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  );
+
+  @override
+  void dispose() {
+    _ringFocus.dispose();
+    super.dispose();
+  }
 
   // ── MOCK CHART DATA ──
   static const _salesOverviewData = [
@@ -782,18 +800,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ── CATEGORY RING INTERACTION ──
+  // Single funnel for every selection change (ring tap, ring hover, legend
+  // tap, hover exit): records the outgoing state for the cross-fade and
+  // restarts the focus animation from 0.
+  void _setCategory(int? next) {
+    if (next == _selectedCategory) return; // no-op hover moves stay cheap
+    setState(() {
+      _prevCategory = _selectedCategory;
+      _selectedCategory = next;
+    });
+    _ringFocus.forward(from: 0);
+  }
+
   void _toggleCategoryAt(Offset pos, Size size) {
     final hit = _categoryHitTest(pos, size);
-    setState(() => _selectedCategory = hit == _selectedCategory ? null : hit);
+    _setCategory(hit == _selectedCategory ? null : hit);
   }
 
   void _hoverCategoryAt(Offset pos, Size size) {
-    final hit = _categoryHitTest(pos, size);
-    if (hit != _selectedCategory) setState(() => _selectedCategory = hit);
+    _setCategory(_categoryHitTest(pos, size));
   }
 
   void _clearCategory() {
-    if (_selectedCategory != null) setState(() => _selectedCategory = null);
+    _setCategory(null);
   }
 
   // Mirrors _RingDonutPainter's geometry so taps land on the right slice.
@@ -906,13 +935,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         onExit: (_) => _clearCategory(),
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTapDown: (d) => _toggleCategoryAt(d.localPosition, chartSize),
-                          child: CustomPaint(
-                            key: const Key('sales-category-ring'),
-                            painter: _RingDonutPainter(
-                              categories: _categoryData,
-                              selected: _selectedCategory,
-                              isDark: isDark,
+                          // onTapUp (not onTapDown): the gesture must WIN the
+                          // arena against the page's scroll view before it
+                          // counts, so a flick that starts a scroll no longer
+                          // selects a segment, and a clean touch always does.
+                          onTapUp: (d) =>
+                              _toggleCategoryAt(d.localPosition, chartSize),
+                          child: AnimatedBuilder(
+                            animation: _ringFocus,
+                            builder: (context, _) => CustomPaint(
+                              key: const Key('sales-category-ring'),
+                              painter: _RingDonutPainter(
+                                categories: _categoryData,
+                                selected: _selectedCategory,
+                                previous: _prevCategory,
+                                focusT: _ringFocus.value,
+                                isDark: isDark,
+                              ),
                             ),
                           ),
                         ),
@@ -955,10 +994,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Positioned(
                         top: 0,
                         left: 0,
-                        child: _buildCategoryChip(
-                          _categoryData[_selectedCategory!],
-                          summary.totalSales,
-                          isDark,
+                        // IgnorePointer is the flicker fix: since Flutter
+                        // 3.35 RenderParagraph.hitTestSelf returns true, so
+                        // the chip's Texts ABSORB hover/taps. Over the
+                        // top-left "Others" pill that removed the ring's
+        // MouseRegion from the hit path → onExit → chip hidden →
+                        // hover re-entered → chip shown… an infinite flicker
+                        // loop, and taps on that pill died on the chip.
+                        // Excluding the chip from hit testing ends both.
+                        child: IgnorePointer(
+                          child: _buildCategoryChip(
+                            _categoryData[_selectedCategory!],
+                            summary.totalSales,
+                            isDark,
+                          ),
                         ),
                       ),
                   ],
@@ -977,9 +1026,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
                 onTap: () {
                   final hit = _categoryData.indexOf(cat);
-                  setState(() {
-                    _selectedCategory = hit == _selectedCategory ? null : hit;
-                  });
+                  _setCategory(hit == _selectedCategory ? null : hit);
                 },
                 child: Row(
                   children: [
@@ -1374,11 +1421,20 @@ class _RingDonutPainter extends CustomPainter {
 
   final List<_CategoryData> categories;
   final int? selected;
+
+  /// Selection state at the START of the focus animation and its progress
+  /// (0→1). Each segment lerps its dim amount between the two states so
+  /// the greying in/out is a smooth cross-fade, not a snap.
+  final int? previous;
+  final double focusT;
+
   final bool isDark;
 
   const _RingDonutPainter({
     required this.categories,
     required this.selected,
+    required this.previous,
+    required this.focusT,
     required this.isDark,
   });
 
@@ -1405,7 +1461,11 @@ class _RingDonutPainter extends CustomPainter {
     var startDegrees = -90.0; // 12 o'clock
     for (var i = 0; i < categories.length; i++) {
       final sweep = categories[i].percentage * 3.6 * scale;
-      final dimmed = selected != null && selected != i;
+      // Dim factor per state: a segment is greyed when something ELSE is
+      // focused. Cross-fade old → new with the animation progress.
+      double dim(int? focus) => (focus != null && focus != i) ? 1.0 : 0.0;
+      final d = (dim(previous) + (dim(selected) - dim(previous)) * focusT)
+          .clamp(0.0, 1.0);
       canvas.drawArc(
         arcRect,
         startDegrees * math.pi / 180,
@@ -1415,9 +1475,11 @@ class _RingDonutPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeWidth = strokeWidth
-          ..color = dimmed
-              ? categories[i].color.withValues(alpha: 0.26)
-              : categories[i].color,
+          ..color = Color.lerp(
+            categories[i].color,
+            categories[i].color.withValues(alpha: 0.26),
+            d,
+          )!,
       );
       startDegrees += sweep + gapDegrees;
     }
@@ -1426,6 +1488,8 @@ class _RingDonutPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RingDonutPainter old) =>
       old.selected != selected ||
+      old.previous != previous ||
+      old.focusT != focusT ||
       old.isDark != isDark ||
       old.categories != categories;
 }

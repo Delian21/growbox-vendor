@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -115,6 +116,54 @@ void main() {
     expect(find.text('May 8'), findsOneWidget,
         reason: 'wide screens keep 5 date ticks');
     expect(find.text('May 12'), findsNothing);
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('dashboard: chip overlapping a pill must not flicker it away',
+      (tester) async {
+    await tester.runAsync(loadRoboto);
+
+    SharedPreferences.setMockInitialValues({'theme_mode': 1});
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MultiProvider(
+      providers: growboxProviders(),
+      child: const GrowboxApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    appRouter.go('/dashboard');
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('sales-category-ring')));
+    await tester.pumpAndSettle();
+    final ringRect =
+        tester.getRect(find.byKey(const Key('sales-category-ring')));
+    // ~340° at r≈100 lands inside the narrow grey "Others" pill — the one
+    // that sits directly UNDER the info chip the moment it is selected.
+    final othersPill = ringRect.center + const Offset(-34, -94);
+
+    final hover = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await hover.addPointer(location: Offset.zero);
+    addTearDown(hover.removePointer);
+    await hover.moveTo(othersPill);
+    await tester.pump();
+    expect(find.textContaining('(5%)'), findsOneWidget,
+        reason: 'hovering the Others pill should reveal its value chip');
+
+    // Move again while the pointer stays on the pill: since Flutter 3.35
+    // RenderParagraph.hitTestSelf is true, so the chip's Texts used to
+    // absorb the hover, evicting the ring's MouseRegion from the hit path
+    // (exit → chip hidden → hover re-enter → chip shown = flicker loop).
+    // IgnorePointer keeps the ring hovered; the chip must survive this.
+    await hover.moveTo(othersPill + const Offset(1, 0));
+    await tester.pump();
+    expect(find.textContaining('(5%)'), findsOneWidget,
+        reason: 'chip must not flicker off while the pointer stays on the pill');
 
     expect(tester.takeException(), isNull);
   });
