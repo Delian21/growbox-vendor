@@ -9,7 +9,11 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/category_colors.dart';
 import '../../core/utils/formatters.dart';
+import '../../app/providers/orders_provider.dart';
 import '../../app/providers/sales_provider.dart';
+import '../../app/providers/store_provider.dart';
+import '../../data/models/order.dart';
+import '../../shared/utils/snackbar_helper.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/shimmer_loader.dart';
@@ -50,6 +54,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     vsync: this,
     duration: const Duration(milliseconds: 280),
   );
+
+  // Recent-order rows held as STATE: the inline Accept action flips
+  // pending → accepted on the very instance the widget tree renders, so
+  // the list must outlive a rebuild — re-creating these literals inside
+  // build() would silently discard the change on the next frame.
+  final List<_OrderItem> _recentOrders = [
+    _OrderItem(id: '#ORD-001', customer: 'Chidi Okonkwo', items: 'Fresh Tomatoes (5), Onions (2)', amount: formatCurrency(14900), status: 'pending', time: '2 min ago'),
+    _OrderItem(id: '#ORD-002', customer: 'Amina Bello', items: 'Bell Peppers (3)', amount: formatCurrency(9600), status: 'preparing', time: '15 min ago'),
+    _OrderItem(id: '#ORD-003', customer: 'Emeka Nwosu', items: 'Organic Lettuce (2)', amount: formatCurrency(3000), status: 'ready', time: '32 min ago'),
+    _OrderItem(id: '#ORD-004', customer: 'Fatima Abdullahi', items: 'Sweet Potatoes (10)', amount: formatCurrency(18000), status: 'completed', time: '1 hour ago'),
+    _OrderItem(id: '#ORD-005', customer: 'Bola Adeyemi', items: 'Carrots (4), Onions (3)', amount: formatCurrency(10800), status: 'cancelled', time: '2 hours ago'),
+  ];
 
   @override
   void dispose() {
@@ -112,7 +128,18 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Shares its palette with the products filter chips via CategoryColors —
   // one hue per category, consistent app-wide.
-  static final _categoryData = [
+  //
+  // Slices below this share (%) merge into the single "Others" bucket —
+  // several hairline slivers read worse than one small slice. With the
+  // current data only "Others" (5%) is under the cutoff, so the ring is
+  // unchanged; raise the constant to fold more categories in.
+  static const _mergedShareCutoff = 6;
+
+  // Card inner width from which the legend moves beside the ring
+  // (ring 220 + gap 16 + ~165 for the longest label row).
+  static const _legendBesideMinWidth = 400.0;
+
+  static final _categoryData = _aggregateSmallCategories([
     for (final e in const {
       'Vegetables': 30,
       'Fruits': 20,
@@ -128,7 +155,27 @@ class _DashboardScreenState extends State<DashboardScreen>
         percentage: e.value,
         color: CategoryColors.forCategory(e.key)!,
       ),
-  ];
+  ]);
+
+  // Folds every non-"Others" category under the cutoff into one slice
+  // (data unchanged — same percentages, just re-bucketed for display).
+  static List<_CategoryData> _aggregateSmallCategories(
+      List<_CategoryData> cats) {
+    final small = cats
+        .where((c) => c.label != 'Others' && c.percentage < _mergedShareCutoff)
+        .toList();
+    if (small.isEmpty) return cats;
+    final merged = small.fold<int>(0, (sum, c) => sum + c.percentage);
+    return [
+      for (final c in cats)
+        if (c.label != 'Others' && c.percentage >= _mergedShareCutoff) c,
+      _CategoryData(
+        label: 'Others',
+        percentage: merged,
+        color: CategoryColors.forCategory('Others')!,
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +245,23 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
         ),
-        const GrowboxBadge(label: 'Online', backgroundColor: AppColors.successLight, textColor: AppColors.success),
+        // Store status — real StoreProvider state and a working toggle,
+        // with an explicit "Store:" prefix so it can't be read as a
+        // connection or session indicator.
+        InkWell(
+          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+          onTap: () => context.read<StoreProvider>().toggleStoreStatus(),
+          child: Builder(builder: (context) {
+            final isOpen = context.watch<StoreProvider>().isOpen;
+            return GrowboxBadge(
+              label: isOpen ? 'Store: Online' : 'Store: Offline',
+              backgroundColor: isOpen
+                  ? AppColors.successLight
+                  : AppColors.errorLight,
+              textColor: isOpen ? AppColors.success : AppColors.error,
+            );
+          }),
+        ),
       ],
     );
   }
@@ -211,10 +274,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       change: '+12.5%',
       changeNote: 'from last month',
     );
+    // Every trend pill names its period — "+3" over what?
     const secondary = [
-      _StatCard(title: 'Orders', value: '156', change: '+8.2%'),
-      _StatCard(title: 'Products', value: '42', change: '+3'),
-      _StatCard(title: 'Rating', value: '4.8', change: '+0.2'),
+      _StatCard(title: 'Orders', value: '156', change: '+8.2%', changeNote: 'this month'),
+      _StatCard(title: 'Products', value: '42', change: '+3', changeNote: 'this month'),
+      _StatCard(title: 'Rating', value: '4.8', change: '+0.2', changeNote: 'this month'),
     ];
 
     return LayoutBuilder(
@@ -439,7 +503,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           if (stat.change != null) ...[
             const SizedBox(width: 8),
-            _changeBadge(stat.change!, isDark, isSmall: true),
+            _changeBadge(stat.change!, isDark, note: stat.changeNote, isSmall: true),
           ],
         ],
       ),
@@ -469,7 +533,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (stat.change != null) _changeBadge(stat.change!, isDark, isSmall: true),
+                if (stat.change != null) _changeBadge(stat.change!, isDark, note: stat.changeNote, isSmall: true),
               ],
             ),
           ),
@@ -485,28 +549,47 @@ class _DashboardScreenState extends State<DashboardScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth > 700) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Right column (flex 4) card inner width decides where the
+          // category legend goes: beside the ring when there's room for
+          // ring 220 + gap 16 + ~165 for the longest label row.
+          final rightInner =
+              (constraints.maxWidth - AppDimensions.lg) * 0.4 -
+                  AppDimensions.cardPadding * 2;
+          final legendBeside = rightInner >= _legendBesideMinWidth;
+          // IntrinsicHeight + stretch: the row lives in a vertical scroll
+          // view (unbounded height), so stretch alone is invalid —
+          // IntrinsicHeight first measures the taller column and hands
+          // BOTH columns that exact height. The shorter side's card then
+          // grows to meet it instead of leaving a dead band on the page;
+          // any slack lands INSIDE a card as breathing room.
+          return IntrinsicHeight(
+            child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Left: Sales Overview (wider)
+              // Left: Sales Overview + Quick Actions stacked — together
+              // they match the Category card's height, so the columns
+              // end at the same line and nothing floats in empty space.
               Expanded(
                 flex: 6,
-                child: _buildSalesOverviewChart(context, isDark),
-              ),
-              const SizedBox(width: AppDimensions.lg),
-              // Right: Category + Quick Actions stacked
-              Expanded(
-                flex: 4,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildSalesByCategoryChart(context, isDark),
+                    _buildSalesOverviewChart(context, isDark),
                     const SizedBox(height: AppDimensions.lg),
                     _buildQuickActionsBento(context, isDark),
                   ],
                 ),
               ),
+              const SizedBox(width: AppDimensions.lg),
+              // Right: Category alone — the row height matches it to the
+              // left stack, and the card stretches to fill.
+              Expanded(
+                flex: 4,
+                child: _buildSalesByCategoryChart(context, isDark,
+                    legendBeside: legendBeside),
+              ),
             ],
+            ),
           );
         }
         // Mobile: stack everything
@@ -514,7 +597,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             _buildSalesOverviewChart(context, isDark, isNarrow: true),
             const SizedBox(height: AppDimensions.lg),
-            _buildSalesByCategoryChart(context, isDark),
+            _buildSalesByCategoryChart(context, isDark,
+                legendBeside: constraints.maxWidth -
+                        AppDimensions.cardPadding * 2 >=
+                    _legendBesideMinWidth),
             const SizedBox(height: AppDimensions.lg),
             _buildQuickActionsBento(context, isDark),
           ],
@@ -537,33 +623,38 @@ class _DashboardScreenState extends State<DashboardScreen>
     final axisStep = (axisSteps < 1 ? 1 : axisSteps) * 10000.0;
     final axisMaxY = (axisTop / axisStep).ceil() * axisStep;
 
+    // Orders get their OWN axis (counts): a 10-based step ≈ top/3 so the
+    // right-hand labels are clean numbers (20/40/60 for this data) sitting
+    // on the same gridlines as the ₦ ticks. Reading counts off the sales
+    // axis was misleading — ₦ and items are different units.
+    var axisOrdersStep = ((maxOrders * 1.15 / 3 / 10).ceil()) * 10;
+    if (axisOrdersStep < 10) axisOrdersStep = 10;
+    final axisOrdersMax = ((maxOrders * 1.15 / axisOrdersStep).ceil()) *
+        axisOrdersStep;
+
     return GrowboxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
+          // Title on its own line; legend + range dropdown get a full row
+          // below, so the three items stop competing for one line.
+          Text(
+            'Sales Overview',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              Text(
-                'Sales Overview',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildLegendDot(AppColors.primary, 'Sales', isDark),
-                  const SizedBox(width: 8),
-                  _buildLegendDot(AppColors.brandOrange, 'Orders', isDark),
-                  const SizedBox(width: 8),
-                  Container(
+              _buildLegendDot(AppColors.primary, 'Sales', isDark),
+              const SizedBox(width: 12),
+              _buildLegendDot(AppColors.brandOrange, 'Orders', isDark),
+              const Spacer(),
+              Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
                       color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
@@ -595,8 +686,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         },
                       ),
                     ),
-                  ),
-                ],
               ),
             ],
           ),
@@ -632,7 +721,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                               filteredData[index].day,
                               style: TextStyle(
                                 fontSize: 10,
-                                color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
+                                // Secondary, not tertiary: tertiary fails
+                                // WCAG AA (≈3.2:1) on the light card.
+                                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
                               ),
                             ),
                           );
@@ -652,16 +743,42 @@ class _DashboardScreenState extends State<DashboardScreen>
                           '₦${(value / 1000).toStringAsFixed(0)}k',
                           style: TextStyle(
                             fontSize: 10,
-                            color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
+                            // AA-compliant contrast (see dates above).
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
                           ),
                         );
                       },
                     ),
                   ),
-                  // Right axis removed: orders are scaled into the sales
-                  // axis, so it only printed raw copies of the ₦ labels
-                  // while costing the plot 40px of width.
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  // Orders count axis (right) — the dashed line's own
+                  // scale, colour-tied to the line it belongs to. Values
+                  // are converted from chart space (₦ gridlines) to counts
+                  // so labels sit ON the same gridlines as the left axis:
+                  // 40k→20, 80k→40, 120k→60 for this data.
+                  rightTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 32,
+                      interval: axisStep,
+                      getTitlesWidget: (value, meta) {
+                        if (value == 0) return const Text('');
+                        final count =
+                            (value / axisMaxY * axisOrdersMax).round();
+                        return Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            // Neutral secondary instead of brandOrange: the
+                            // orange (≈2.9:1 on white) fails AA at 10px;
+                            // the dashed orange line still ties label→line.
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.textSecondary,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 minY: 0,
@@ -677,19 +794,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     color: AppColors.primary,
                     barWidth: 2.5,
                     isStrokeCapRound: true,
-                    // Narrow screens: no per-point dots — 62 of them in
-                    // ~240px read as a bead curtain. Touch still works.
-                    dotData: FlDotData(
-                      show: !isNarrow,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: 3,
-                          color: AppColors.primary,
-                          strokeWidth: 1.5,
-                          strokeColor: isDark ? AppColors.darkSurface : AppColors.surface,
-                        );
-                      },
-                    ),
+                    // No idle dots — the touched-spot indicator below
+                    // draws a dot per point on hover/tap instead.
+                    dotData: FlDotData(show: false),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
@@ -705,8 +812,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   // ── Orders line (orange, dashed, secondary axis) ──
                   LineChartBarData(
                     spots: filteredData.asMap().entries.map((entry) {
-                      // Scale orders to sales Y-axis so they share the same chart space
-                      final scaledOrders = (entry.value.orders / maxOrders) * maxSales;
+                      // Plot counts on the ORDERS scale (axisOrdersMax at the
+                      // plot top), so the right-hand labels read true values.
+                      final scaledOrders =
+                          (entry.value.orders / axisOrdersMax) * axisMaxY;
                       return FlSpot(entry.key.toDouble(), scaledOrders);
                     }).toList(),
                     isCurved: true,
@@ -714,21 +823,36 @@ class _DashboardScreenState extends State<DashboardScreen>
                     barWidth: 2,
                     isStrokeCapRound: true,
                     dashArray: [6, 4],
-                    dotData: FlDotData(
-                      show: !isNarrow,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: 3,
-                          color: AppColors.brandOrange,
-                          strokeWidth: 1.5,
-                          strokeColor: isDark ? AppColors.darkSurface : AppColors.surface,
-                        );
-                      },
-                    ),
+                    dotData: FlDotData(show: false),
                     belowBarData: BarAreaData(show: false),
                   ),
                 ],
                 lineTouchData: LineTouchData(
+                  // Idle: no dots on the 31 points. When the chart is
+                  // touched/hovered, fl_chart asks for these indicators per
+                  // touched spot — a single ringed dot on each point under
+                  // the finger/cursor (no vertical stalk).
+                  getTouchedSpotIndicator: (barData, indexes) {
+                    return indexes.map((_) {
+                      return TouchedSpotIndicatorData(
+                        // FlLine has no `show` flag in fl_chart 1.x —
+                        // a transparent stroke hides the vertical stalk.
+                        const FlLine(color: Colors.transparent),
+                        FlDotData(
+                          show: true,
+                          getDotPainter: (spot, percent, bar, index) {
+                            return FlDotCirclePainter(
+                              radius: 4,
+                              color: barData.color ?? AppColors.primary,
+                              strokeWidth: 1.5,
+                              strokeColor:
+                                  isDark ? AppColors.darkSurface : AppColors.surface,
+                            );
+                          },
+                        ),
+                      );
+                    }).toList();
+                  },
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipColor: (_) => isDark ? const Color(0xFF1A1D1A) : Colors.white,
                     tooltipBorderRadius: BorderRadius.circular(8),
@@ -738,7 +862,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                         final isSales = spot.barIndex == 0;
                         final label = isSales
                             ? 'Sales: ${formatCurrency(spot.y)}'
-                            : 'Orders: ${maxOrders > 0 ? ((spot.y / maxSales) * maxOrders).round() : 0}';
+                            // Undo the plot scaling: y → count on the Orders axis.
+                            : 'Orders: ${maxOrders > 0 ? ((spot.y / axisMaxY) * axisOrdersMax).round() : 0}';
                         return LineTooltipItem(
                           label,
                           TextStyle(
@@ -901,7 +1026,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Idle: a clean rounded-cap ring with no labels. Hover (desktop) or
   // tap (touch) a segment: the others dim and a value chip appears
   // top-left; tap the gap or the same segment again to return to idle.
-  Widget _buildSalesByCategoryChart(BuildContext context, bool isDark) {
+  Widget _buildSalesByCategoryChart(BuildContext context, bool isDark,
+      {required bool legendBeside}) {
     final summary = context.watch<SalesProvider>().summary;
     return GrowboxCard(
       child: Column(
@@ -917,142 +1043,178 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
           const SizedBox(height: AppDimensions.lg),
-          SizedBox(
-            height: 220,
-            // Explicit full width: without it the Stack shrink-wraps to the
-            // center KPI and the ring paints shoved against the card edge.
-            width: double.infinity,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final chartSize = constraints.biggest;
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        onHover: (e) => _hoverCategoryAt(e.localPosition, chartSize),
-                        onExit: (_) => _clearCategory(),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          // onTapUp (not onTapDown): the gesture must WIN the
-                          // arena against the page's scroll view before it
-                          // counts, so a flick that starts a scroll no longer
-                          // selects a segment, and a clean touch always does.
-                          onTapUp: (d) =>
-                              _toggleCategoryAt(d.localPosition, chartSize),
-                          child: AnimatedBuilder(
-                            animation: _ringFocus,
-                            builder: (context, _) => CustomPaint(
-                              key: const Key('sales-category-ring'),
-                              painter: _RingDonutPainter(
-                                categories: _categoryData,
-                                selected: _selectedCategory,
-                                previous: _prevCategory,
-                                focusT: _ringFocus.value,
-                                isDark: isDark,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Center KPI stays constant (like the reference);
-                    // IgnorePointer keeps ring taps/hovers reaching the chart.
-                    IgnorePointer(
-                      child: SizedBox(
-                        width: 100,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                formatCurrency(summary.totalSales),
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                                  height: 1.1,
+          // [legendBeside] is decided by the bento row's width math: a wide
+          // card puts the legend BESIDE the ring (saves ~250px of height);
+          // a narrow one stacks it below, as before. Decided upstream because
+          // a LayoutBuilder here would break the row's IntrinsicHeight
+          // (intrinsics can't be computed through layout callbacks).
+          Builder(
+            builder: (context) {
+              final beside = legendBeside;
+              final ring = SizedBox(
+                height: 220,
+                // Full width when stacked: without it the Stack shrink-wraps
+                // to the center KPI and the ring hugs the card edge.
+                width: beside ? 220 : double.infinity,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final chartSize = constraints.biggest;
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned.fill(
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            onHover: (e) => _hoverCategoryAt(e.localPosition, chartSize),
+                            onExit: (_) => _clearCategory(),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              // onTapUp (not onTapDown): the gesture must WIN the
+                              // arena against the page's scroll view before it
+                              // counts, so a flick that starts a scroll no longer
+                              // selects a segment, and a clean touch always does.
+                              onTapUp: (d) =>
+                                  _toggleCategoryAt(d.localPosition, chartSize),
+                              child: AnimatedBuilder(
+                                animation: _ringFocus,
+                                builder: (context, _) => CustomPaint(
+                                  key: const Key('sales-category-ring'),
+                                  painter: _RingDonutPainter(
+                                    categories: _categoryData,
+                                    selected: _selectedCategory,
+                                    previous: _prevCategory,
+                                    focusT: _ringFocus.value,
+                                    isDark: isDark,
+                                  ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Total Sales',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (_selectedCategory != null)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        // IgnorePointer is the flicker fix: since Flutter
-                        // 3.35 RenderParagraph.hitTestSelf returns true, so
-                        // the chip's Texts ABSORB hover/taps. Over the
-                        // top-left "Others" pill that removed the ring's
-        // MouseRegion from the hit path → onExit → chip hidden →
-                        // hover re-entered → chip shown… an infinite flicker
-                        // loop, and taps on that pill died on the chip.
-                        // Excluding the chip from hit testing ends both.
-                        child: IgnorePointer(
-                          child: _buildCategoryChip(
-                            _categoryData[_selectedCategory!],
-                            summary.totalSales,
-                            isDark,
                           ),
                         ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: AppDimensions.md),
-          // Legend rows are tappable too — on phones a precise arc tap is
-          // fiddly, and the row gives the same select/deselect + chip flow.
-          ..._categoryData.map((cat) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                onTap: () {
-                  final hit = _categoryData.indexOf(cat);
-                  _setCategory(hit == _selectedCategory ? null : hit);
-                },
-                child: Row(
-                  children: [
-                    _buildCategoryLegendIcon(cat),
-                    const SizedBox(width: 8),
-                    Text(
-                      cat.label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${cat.percentage}%',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
+                        // Center KPI stays constant (like the reference);
+                        // IgnorePointer keeps ring taps/hovers reaching the chart.
+                        IgnorePointer(
+                          child: SizedBox(
+                            width: 100,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    formatCurrency(summary.totalSales),
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Total Sales',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-              ),
-            ),
-          )),
+              );
+              // Legend rows are tappable too — on phones a precise arc tap is
+              // fiddly, and the row gives the same select/deselect + chip flow.
+              final legend = _categoryData
+                  .map((cat) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                            onTap: () {
+                              final hit = _categoryData.indexOf(cat);
+                              _setCategory(hit == _selectedCategory ? null : hit);
+                            },
+                            child: Row(
+                              children: [
+                                _buildCategoryLegendIcon(cat),
+                                const SizedBox(width: 8),
+                                Text(
+                                  cat.label,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '${cat.percentage}%',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ))
+                  .toList();
+              final body = beside
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        ring,
+                        const SizedBox(width: AppDimensions.lg),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: legend,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ring,
+                        const SizedBox(height: AppDimensions.md),
+                        ...legend,
+                      ],
+                    );
+              // Info chip floats above the ring's top-left in BOTH layouts;
+              // outside the ring box so it can't clip against it. IgnorePointer
+              // keeps its Texts out of hit testing (RenderParagraph.hitTestSelf
+              // is true since Flutter 3.35 — otherwise the chip would steal the
+              // ring's hover over the "Others" pill and flicker).
+              return Stack(
+                children: [
+                  body,
+                  if (_selectedCategory != null)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: IgnorePointer(
+                        child: _buildCategoryChip(
+                          _categoryData[_selectedCategory!],
+                          summary.totalSales,
+                          isDark,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1061,13 +1223,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ── RECENT ORDERS ──
   Widget _buildRecentOrdersSection(BuildContext context, bool isDark) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
-    final orders = [
-      _OrderItem(id: '#ORD-001', customer: 'Chidi Okonkwo', items: 'Fresh Tomatoes (5), Onions (2)', amount: formatCurrency(14900), status: 'pending', time: '2 min ago'),
-      _OrderItem(id: '#ORD-002', customer: 'Amina Bello', items: 'Bell Peppers (3)', amount: formatCurrency(9600), status: 'preparing', time: '15 min ago'),
-      _OrderItem(id: '#ORD-003', customer: 'Emeka Nwosu', items: 'Organic Lettuce (2)', amount: formatCurrency(3000), status: 'ready', time: '32 min ago'),
-      _OrderItem(id: '#ORD-004', customer: 'Fatima Abdullahi', items: 'Sweet Potatoes (10)', amount: formatCurrency(18000), status: 'completed', time: '1 hour ago'),
-      _OrderItem(id: '#ORD-005', customer: 'Bola Adeyemi', items: 'Carrots (4), Onions (3)', amount: formatCurrency(10800), status: 'cancelled', time: '2 hours ago'),
-    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1092,7 +1247,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _buildOrdersTableHeader(isDark),
                 Divider(height: 1, color: isDark ? AppColors.darkBorder : AppColors.border),
               ],
-              ...orders.map((order) => _buildOrderRow(context, order, isDark)),
+              ..._recentOrders.map((order) => _buildOrderRow(context, order, isDark)),
             ],
           ),
         ),
@@ -1149,7 +1304,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                     ),
                   ),
-                  _buildStatusBadge(order.status),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildStatusBadge(order.status),
+                      if (order.status == 'pending') ...[
+                        const SizedBox(width: 8),
+                        _acceptOrderButton(order),
+                      ],
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: AppDimensions.sm),
@@ -1159,7 +1323,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   Text(order.amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
                   const Spacer(),
-                  Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+                  Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
                 ],
               ),
             ],
@@ -1200,11 +1364,23 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             Expanded(
               flex: 2,
-              child: Align(alignment: Alignment.centerLeft, child: _buildStatusBadge(order.status)),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildStatusBadge(order.status),
+                    if (order.status == 'pending') ...[
+                      const SizedBox(width: 8),
+                      _acceptOrderButton(order),
+                    ],
+                  ],
+                ),
+              ),
             ),
             Expanded(
               flex: 1,
-              child: Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+              child: Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
             ),
           ],
         ),
@@ -1212,10 +1388,29 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  // Inline accept for pending rows — same terminal state as the Orders
+  // screen's accept flow (status → Accepted), without leaving the dashboard.
+  Widget _acceptOrderButton(_OrderItem order) {
+    return TextButton(
+      onPressed: () => setState(() => order.status = 'accepted'),
+      style: TextButton.styleFrom(
+        backgroundColor: AppColors.successLight,
+        foregroundColor: AppColors.success,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        minimumSize: Size.zero,
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+      child: const Text('Accept'),
+    );
+  }
+
   Widget _buildStatusBadge(String status) {
     return switch (status) {
       'pending' => const GrowboxBadge(label: 'Pending', backgroundColor: AppColors.pendingLight, textColor: AppColors.pending, isSmall: true),
       'preparing' => const GrowboxBadge(label: 'Preparing', backgroundColor: AppColors.preparingLight, textColor: AppColors.preparing, isSmall: true),
+      // Same tokens as the Orders screen's Accepted badge.
+      'accepted' => const GrowboxBadge(label: 'Accepted', backgroundColor: AppColors.acceptedLight, textColor: AppColors.accepted, isSmall: true),
       'ready' => const GrowboxBadge(label: 'Ready', backgroundColor: AppColors.readyLight, textColor: AppColors.ready, isSmall: true),
       'completed' => const GrowboxBadge(label: 'Completed', backgroundColor: AppColors.completedLight, textColor: AppColors.completed, isSmall: true),
       'cancelled' => const GrowboxBadge(label: 'Cancelled', backgroundColor: AppColors.cancelledLight, textColor: AppColors.cancelled, isSmall: true),
@@ -1223,13 +1418,44 @@ class _DashboardScreenState extends State<DashboardScreen>
     };
   }
 
+  // Quick action: flip the oldest pending order to Ready and confirm —
+  // a real task from the Orders provider, not a link to the Orders screen.
+  Future<void> _markNextOrderReady(BuildContext context) async {
+    final provider = context.read<OrdersProvider>();
+    final pending =
+        provider.orders.where((o) => o.status == OrderStatus.pending).toList();
+    if (pending.isEmpty) {
+      SnackbarHelper.showError(context, 'No pending orders to mark ready');
+      return;
+    }
+    final order = pending.first;
+    final ok = await provider.updateOrderStatus(order.id, OrderStatus.ready);
+    if (!context.mounted) return;
+    if (ok) {
+      SnackbarHelper.showSuccess(context, 'Order ${order.id} is ready');
+    } else {
+      SnackbarHelper.showError(context, 'Could not update ${order.id}');
+    }
+  }
+
   // ── QUICK ACTIONS — compact bento (vertical stack for right column) ──
   Widget _buildQuickActionsBento(BuildContext context, bool isDark) {
     final actions = [
+      // Kept: the one task the sidebar doesn't lead with.
       _QuickAction(icon: Icons.add_shopping_cart_outlined, label: 'Add Product', route: '/products'),
-      _QuickAction(icon: Icons.receipt_long_outlined, label: 'View Orders', route: '/orders'),
-      _QuickAction(icon: Icons.bar_chart_outlined, label: 'Sales Report', route: '/sales'),
-      _QuickAction(icon: Icons.store_outlined, label: 'My Store', route: '/store'),
+      // Replacements for the sidebar clones: two actions + a pre-filtered
+      // view — none of them are plain navigation any more.
+      _QuickAction(icon: Icons.check_circle_outline, label: 'Mark order ready', run: () => _markNextOrderReady(context)),
+      // Stock lives on the product cards — the screen that shows it.
+      _QuickAction(icon: Icons.inventory_2_outlined, label: 'Update stock', route: '/products'),
+      _QuickAction(
+        icon: Icons.pending_actions_outlined,
+        label: 'Review pending orders',
+        run: () {
+          context.read<OrdersProvider>().setFilter(OrderStatus.pending);
+          context.go('/orders');
+        },
+      ),
     ];
 
     return GrowboxCard(
@@ -1248,7 +1474,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () => context.go(action.route),
+                // Actions run in place; navigation tiles still deep-link.
+                onTap: action.run ?? () => context.go(action.route!),
                 borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1384,14 +1611,21 @@ class _ArcGaugePainter extends CustomPainter {
 }
 
 class _OrderItem {
-  final String id, customer, items, amount, status, time;
+  final String id, customer, items, amount, time;
+
+  // Mutable: the inline Accept action promotes pending → accepted in place.
+  String status;
   _OrderItem({required this.id, required this.customer, required this.items, required this.amount, required this.status, required this.time});
 }
 
 class _QuickAction {
   final IconData icon;
-  final String label, route;
-  _QuickAction({required this.icon, required this.label, required this.route});
+  final String label;
+
+  // Either a destination (route) or an in-place action (run).
+  final String? route;
+  final VoidCallback? run;
+  _QuickAction({required this.icon, required this.label, this.route, this.run});
 }
 
 class _ChartData {

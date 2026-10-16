@@ -49,10 +49,10 @@ void main() {
         reason: 'verification must run against the light theme');
 
     // ── 1. Online badge lives in the header, beside the title ──
-    expect(find.text('Online'), findsOneWidget,
-        reason: 'the dashboard badge moved to the header; one instance expected');
+    expect(find.text('Store: Online'), findsOneWidget,
+        reason: 'the store pill moved to the header; one instance expected');
 
-    final badgeRect = tester.getRect(find.text('Online'));
+    final badgeRect = tester.getRect(find.text('Store: Online'));
     final headerTitles = find
         .text('Products')
         .evaluate()
@@ -112,9 +112,8 @@ void main() {
     for (final width in [360.0, 412.0]) {
       tester.view.physicalSize = Size(width, 844);
       await tester.pump();
-      await tester.pumpAndSettle();
-      expect(find.text('Online'), findsOneWidget,
-          reason: 'badge must survive a resize to ${width.toInt()}px');
+      await tester.pumpAndSettle();      expect(find.text('Store: Online'), findsOneWidget,
+        reason: 'badge must survive a resize to ${width.toInt()}px');
     }
 
     expect(tester.takeException(), isNull);

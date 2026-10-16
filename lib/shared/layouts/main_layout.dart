@@ -8,6 +8,7 @@ import '../../app/theme_provider.dart';
 import '../../app/providers/auth_provider.dart';
 import '../../app/providers/notifications_provider.dart';
 import '../../app/providers/orders_provider.dart';
+import '../../app/providers/store_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/app_strings.dart';
@@ -567,7 +568,9 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        item.badgeCount! > 9 ? '9+' : '${item.badgeCount}',
+                        // Same format as the header bell: exact count,
+                        // never "9+" — one number, one rendering.
+                        '${item.badgeCount}',
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -712,36 +715,49 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     // welcome header was trimmed down to a single line.
                     if (isMobile) ...[
                       const SizedBox(width: AppDimensions.sm),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.14),
+                      // Store status pill — StoreProvider state with a real
+                      // toggle, same "Store: Online/Offline" wording as the
+                      // dashboard's subtitle pill.
+                      Builder(builder: (context) {
+                        final isOpen = context.watch<StoreProvider>().isOpen;
+                        return InkWell(
+                          onTap: () =>
+                              context.read<StoreProvider>().toggleStoreStatus(),
                           borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: AppColors.success,
-                                shape: BoxShape.circle,
-                              ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
                             ),
-                            const SizedBox(width: 4),
-                            const Text(
-                              'Online',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: isOpen
+                                        ? AppColors.success
+                                        : AppColors.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isOpen ? 'Store: Online' : 'Store: Offline',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      }),
                     ],
                   ],
                 ),
@@ -1004,7 +1020,9 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
     return Container(
       width: size,
       height: size,
-      clipBehavior: Clip.hardEdge,
+      // antiAlias: hardEdge clips a circle with visible flat facets,
+      // which read as a "cut" avatar edge.
+      clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(
         color: AppColors.primary,
         shape: BoxShape.circle,
@@ -1150,10 +1168,21 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         ),
       ],
       child: Container(
+        // Same horizontal inset as the nav items above (they sit inside
+        // the scroll view's AppDimensions.sm padding) — flush against the
+        // sidebar edges made the card read as chrome, not content.
+        margin: const EdgeInsets.symmetric(horizontal: AppDimensions.sm),
         padding: EdgeInsets.all(isCollapsed ? AppDimensions.xs : AppDimensions.md),
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurfaceVariant : AppColors.primarySurface,
+          // The sidebar is always dark, so use the subtle dark surface
+          // in BOTH themes — the old mint fill (primarySurface) was the
+          // brightest thing on screen and out-shouted the nav items.
+          color: AppColors.darkSurfaceVariant,
           borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+          border: Border.all(
+            color: AppColors.darkBorder.withValues(alpha: 0.4),
+            width: 0.5,
+          ),
         ),
         child: isCollapsed
             ? _buildAccountAvatar()
@@ -1171,14 +1200,21 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      // White in light theme, like the nav item labels:
+                      // this card sits on the always-dark sidebar, so the
+                      // light-theme text tokens would go dark-on-dark.
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : Colors.white,
                     ),
                   ),
                   Text(
                     'Farm Fresh Ltd',
                     style: TextStyle(
                       fontSize: 11,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : const Color(0xB3FFFFFF),
                     ),
                   ),
                 ],
@@ -1187,7 +1223,9 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
             Icon(
               Icons.chevron_right,
               size: 20,
-              color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
+              color: isDark
+                  ? AppColors.darkTextTertiary
+                  : const Color(0x80FFFFFF),
             ),
           ],
         ),
@@ -1348,7 +1386,7 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                                                 ),
                                                 child: Center(
                                                   child: Text(
-                                                    badgeCount > 9 ? '9+' : '$badgeCount',
+                                                    '$badgeCount',
                                                     style: const TextStyle(
                                                       fontSize: 9,
                                                       fontWeight: FontWeight.w700,

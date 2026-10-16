@@ -47,6 +47,14 @@ void main() {
     expect(find.textContaining('(30%)'), findsNothing,
         reason: 'percent chip must stay hidden until a segment is selected');
 
+    // Narrow (phone) screens keep the legend BELOW the ring — beside-ring
+    // layout is reserved for wide cards.
+    final phoneRing =
+        tester.getRect(find.byKey(const Key('sales-category-ring')));
+    expect(tester.getTopLeft(find.text('Vegetables')).dy,
+        greaterThan(phoneRing.bottom),
+        reason: 'phone layout stacks the legend under the ring');
+
     // Tap behaviour: selecting a segment dims the rest and pops the
     // name/value/percent chip; tapping it again returns to idle.
     // (Hit testing only works for what's on screen — scroll it up first.)
@@ -116,6 +124,98 @@ void main() {
     expect(find.text('May 8'), findsOneWidget,
         reason: 'wide screens keep 5 date ticks');
     expect(find.text('May 12'), findsNothing);
+
+    // At 1280 the category card is still too narrow for a beside-ring
+    // legend (that needs the wide breakpoint) — legend stacks below.
+    final desktopRing =
+        tester.getRect(find.byKey(const Key('sales-category-ring')));
+    expect(tester.getTopLeft(find.text('Vegetables')).dy,
+        greaterThan(desktopRing.bottom),
+        reason: 'legend stacks under the ring below the wide threshold');
+
+    // Orders has its own count axis on the right: 20/40/60 for this data,
+    // sharing the gridlines with the ₦ ticks on the left.
+    expect(find.text('60'), findsOneWidget,
+        reason: 'Orders secondary axis tops out at 60 for this data');
+    expect(find.text('20'), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('dashboard: category legend moves beside the ring on wide screens',
+      (tester) async {
+    await tester.runAsync(loadRoboto);
+
+    SharedPreferences.setMockInitialValues({'theme_mode': 1});
+    tester.view.physicalSize = const Size(1536, 950);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MultiProvider(
+      providers: growboxProviders(),
+      child: const GrowboxApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    appRouter.go('/dashboard');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('sales-category-ring')));
+    await tester.pumpAndSettle();
+
+    final ringRect =
+        tester.getRect(find.byKey(const Key('sales-category-ring')));
+    final legendTop = tester.getTopLeft(find.text('Vegetables'));
+    expect(legendTop.dx, greaterThan(ringRect.right),
+        reason: 'wide screens put the legend beside the ring');
+    expect(find.text('Others'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('dashboard: store pill toggles and pending orders accept',
+      (tester) async {
+    await tester.runAsync(loadRoboto);
+
+    SharedPreferences.setMockInitialValues({'theme_mode': 1});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MultiProvider(
+      providers: growboxProviders(),
+      child: const GrowboxApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    appRouter.go('/dashboard');
+    await tester.pumpAndSettle();
+
+    // ── Store pill: explicit label, wired to StoreProvider, flips both ways ──
+    expect(find.text('Store: Online'), findsOneWidget);
+    await tester.tap(find.text('Store: Online'));
+    await tester.pumpAndSettle();
+    expect(find.text('Store: Offline'), findsOneWidget,
+        reason: 'tapping the pill must close the store');
+    await tester.tap(find.text('Store: Offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('Store: Online'), findsOneWidget,
+        reason: 'tapping again must reopen it');
+
+    // ── Inline Accept: the pending mock row (#ORD-001) exposes the button ──
+    expect(find.text('Accept'), findsOneWidget,
+        reason: 'the pending order gets an inline Accept');
+    expect(find.text('Pending'), findsOneWidget);
+    await tester.ensureVisible(find.text('Accept'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Accept'));
+    await tester.pump();
+    expect(find.text('Accept'), findsNothing,
+        reason: 'accepting consumes the button');
+    expect(find.text('Accepted'), findsOneWidget,
+        reason: 'the row now shows the Accepted badge');
+    expect(find.text('Pending'), findsNothing,
+        reason: 'no pending rows remain');
 
     expect(tester.takeException(), isNull);
   });
