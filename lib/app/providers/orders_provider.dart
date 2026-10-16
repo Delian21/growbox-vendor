@@ -6,14 +6,31 @@ class OrdersProvider extends ChangeNotifier {
   bool _isLoading = false;
   OrderStatus? _filterStatus;
 
-  List<Order> get orders => _filterStatus == null
-      ? _orders
-      : _orders.where((o) => o.status == _filterStatus).toList();
+  /// Filtered view, sorted for action: pending orders first (they need a
+  /// decision), then newest to oldest within each group.
+  List<Order> get orders {
+    final list = _filterStatus == null
+        ? List<Order>.from(_orders)
+        : _orders.where((o) => o.status == _filterStatus).toList();
+    list.sort((a, b) {
+      final aPending = a.status == OrderStatus.pending ? 0 : 1;
+      final bPending = b.status == OrderStatus.pending ? 0 : 1;
+      if (aPending != bPending) return aPending - bPending;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return list;
+  }
+
   bool get isLoading => _isLoading;
   OrderStatus? get filterStatus => _filterStatus;
   int get totalCount => _orders.length;
   int get pendingCount =>
       _orders.where((o) => o.status == OrderStatus.pending).length;
+
+  /// Live per-status count for filter chip labels; [status] null = all.
+  int countFor(OrderStatus? status) => status == null
+      ? _orders.length
+      : _orders.where((o) => o.status == status).length;
 
   OrdersProvider() {
     _loadMockOrders();
@@ -114,7 +131,11 @@ class OrdersProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> updateOrderStatus(String orderId, OrderStatus newStatus) async {
+  Future<bool> updateOrderStatus(
+    String orderId,
+    OrderStatus newStatus, {
+    String? notes,
+  }) async {
     _isLoading = true;
     notifyListeners();
 
@@ -122,7 +143,7 @@ class OrdersProvider extends ChangeNotifier {
 
     final index = _orders.indexWhere((o) => o.id == orderId);
     if (index != -1) {
-      _orders[index] = _orders[index].copyWith(status: newStatus);
+      _orders[index] = _orders[index].copyWith(status: newStatus, notes: notes);
     }
 
     _isLoading = false;

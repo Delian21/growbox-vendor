@@ -76,6 +76,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildTabs(BuildContext context, bool isDark, OrdersProvider provider) {
+    // Counts come from the provider (live per-status), not hardcoded labels.
     final tabs = [
       _TabItem(label: 'All', status: null),
       _TabItem(label: 'Pending', status: OrderStatus.pending),
@@ -97,7 +98,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           final isSelected = provider.filterStatus == tab.status;
 
           return FilterChip(
-            label: Text(tab.label),
+            label: Text('${tab.label} (${provider.countFor(tab.status)})'),
             selected: isSelected,
             onSelected: (_) => provider.setFilter(tab.status),
             selectedColor: isDark ? AppColors.primaryDark : AppColors.primary,
@@ -121,15 +122,61 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
+  // ── Column geometry shared by the header row and EVERY data row, so
+  // Order / Items / Amount / Status / Time / Actions line up at all times.
+  // Status is a fixed pill width; Actions is always reserved (empty on
+  // non-pending rows) so nothing shifts when a row has buttons.
+  static const double _statusColWidth = 90;
+  static const double _timeColWidth = 80;
+  static const double _actionsColWidth = 148;
+
   Widget _buildOrdersTable(BuildContext context, bool isDark, List<Order> orders) {
+    final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
+
     return GrowboxCard(
       padding: EdgeInsets.zero,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Header row mirrors the dashboard's Recent Orders table style.
+          if (!isMobile) ...[
+            _buildTableHeader(context, isDark),
+            Divider(height: 1, color: isDark ? AppColors.darkBorder : AppColors.border),
+          ],
           ...orders.map((order) => _buildOrderRow(context, order, isDark)),
         ],
       ),
+    );
+  }
+
+  Widget _buildTableHeader(BuildContext context, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.md),
+      child: Row(
+        children: [
+          // Same flex/fixed widths as _buildOrderRow's desktop branch.
+          Expanded(flex: 2, child: _tableHeader('Order', isDark)),
+          Expanded(flex: 3, child: _tableHeader('Items', isDark)),
+          Expanded(flex: 2, child: _tableHeader('Amount', isDark)),
+          SizedBox(width: _statusColWidth, child: _tableHeader('Status', isDark)),
+          const SizedBox(width: AppDimensions.md),
+          SizedBox(width: _timeColWidth, child: _tableHeader('Time', isDark)),
+          SizedBox(
+            width: _actionsColWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _tableHeader('Actions', isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableHeader(String text, bool isDark) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary, letterSpacing: 0.5),
     );
   }
 
@@ -173,7 +220,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 children: [
                   Text(formatCurrency(order.totalAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary)),
                   const Spacer(),
-                  Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+                  // Time — secondary text (same as the dashboard table) for contrast.
+                  Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
                 ],
               ),
               if (order.status == OrderStatus.pending) ...[
@@ -188,11 +236,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     ),
                     const SizedBox(width: AppDimensions.sm),
+                    // Ghost destructive: outlined red instead of solid fill.
                     Expanded(
                       child: GrowboxButton(
                         label: 'Reject',
                         onPressed: () => _rejectOrder(context, order),
-                        variant: GrowboxButtonVariant.danger,
+                        variant: GrowboxButtonVariant.dangerOutline,
                         icon: Icons.cancel_outlined,
                       ),
                     ),
@@ -239,50 +288,55 @@ class _OrdersScreenState extends State<OrdersScreen> {
               flex: 2,
               child: Text(formatCurrency(order.totalAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
             ),
-            // Status
+            // Status — fixed pill width shared with the header row.
             SizedBox(
-              width: 90,
+              width: _statusColWidth,
               child: Align(alignment: Alignment.centerLeft, child: _statusBadge(order.status)),
             ),
             const SizedBox(width: AppDimensions.md),
-            // Time
+            // Time — secondary text (same as the dashboard table) for contrast.
             SizedBox(
-              width: 80,
-              child: Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+              width: _timeColWidth,
+              child: Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
             ),
-            // Actions (pending only)
-            if (order.status == OrderStatus.pending)
-              SizedBox(
-                width: 140,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _acceptOrder(context, order),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+            // Actions — reserved on EVERY row so columns never shift; only
+            // pending orders get buttons.
+            SizedBox(
+              width: _actionsColWidth,
+              child: order.status == OrderStatus.pending
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Accept stays the solid, primary action.
+                        GestureDetector(
+                          onTap: () => _acceptOrder(context, order),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                            ),
+                            child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                          ),
                         ),
-                        child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () => _rejectOrder(context, order),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.error,
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                        const SizedBox(width: 6),
+                        // Reject is a ghost/outlined action — less weight.
+                        GestureDetector(
+                          onTap: () => _rejectOrder(context, order),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.transparent,
+                              border: Border.all(color: AppColors.error, width: 1),
+                              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                            ),
+                            child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.error)),
+                          ),
                         ),
-                        child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
@@ -339,19 +393,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _rejectOrder(BuildContext context, Order order) async {
-    final confirmed = await showDialog<bool>(
+    // The dialog returns the trimmed reason on confirm (possibly empty —
+    // skipping it still rejects) and null when the vendor keeps the order.
+    final reason = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reject Order'),
-        content: Text('Are you sure you want to reject order ${order.id} from ${order.customerName}?\n\nThis action cannot be undone and the customer will be notified.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep Order')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reject Order', style: TextStyle(color: AppColors.error))),
-        ],
-      ),
+      builder: (dialogContext) => _RejectOrderDialog(order: order),
     );
-    if (confirmed == true && context.mounted) {
-      final success = await context.read<OrdersProvider>().updateOrderStatus(order.id, OrderStatus.cancelled);
+
+    if (reason != null && context.mounted) {
+      final success = await context.read<OrdersProvider>().updateOrderStatus(
+        order.id,
+        OrderStatus.cancelled,
+        notes: reason.isEmpty ? null : reason,
+      );
       if (success && context.mounted) {
         SnackbarHelper.showSuccess(context, 'Order ${order.id} rejected');
       }
@@ -363,4 +417,68 @@ class _TabItem {
   final String label;
   final OrderStatus? status;
   _TabItem({required this.label, required this.status});
+}
+
+/// Confirmation dialog for rejecting an order, with an optional reason.
+///
+/// It owns its [TextEditingController] so disposal happens in
+/// [State.dispose] — after the dialog's exit animation finishes — instead
+/// of the moment `showDialog` completes, which would crash the still-
+/// animating TextField.
+class _RejectOrderDialog extends StatefulWidget {
+  final Order order;
+
+  const _RejectOrderDialog({required this.order});
+
+  @override
+  State<_RejectOrderDialog> createState() => _RejectOrderDialogState();
+}
+
+class _RejectOrderDialogState extends State<_RejectOrderDialog> {
+  final TextEditingController _reasonController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reject Order'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Reject order ${widget.order.id} from ${widget.order.customerName}?\n\nThis action cannot be undone and the customer will be notified.'),
+          const SizedBox(height: AppDimensions.lg),
+          // Optional: a short reason the customer can be told; skipping it
+          // still rejects the order.
+          TextField(
+            controller: _reasonController,
+            maxLines: 3,
+            maxLength: 200,
+            decoration: const InputDecoration(
+              counterText: '',
+              labelText: 'Reason (optional)',
+              hintText: 'e.g. Out of stock today',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Keep Order'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(context, _reasonController.text.trim()),
+          child: const Text('Reject Order', style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    );
+  }
 }

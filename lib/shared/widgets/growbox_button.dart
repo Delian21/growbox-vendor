@@ -3,7 +3,14 @@ import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 
-enum GrowboxButtonVariant { primary, secondary, outline, text, danger }
+enum GrowboxButtonVariant {
+  primary,
+  secondary,
+  outline,
+  text,
+  danger,
+  dangerOutline,
+}
 
 class GrowboxButton extends StatefulWidget {
   final String label;
@@ -95,6 +102,9 @@ class _GrowboxButtonState extends State<GrowboxButton>
           (bg: Colors.transparent, fg: AppColors.textTertiary),
         GrowboxButtonVariant.danger =>
           (bg: _dangerDisabledBg, fg: _dangerDisabledFg),
+        // Ghost destructive: no fill, muted label (matches outline's disabled).
+        GrowboxButtonVariant.dangerOutline =>
+          (bg: Colors.transparent, fg: AppColors.textTertiary),
       };
     }
 
@@ -109,6 +119,8 @@ class _GrowboxButtonState extends State<GrowboxButton>
           (bg: AppColors.surfaceVariant, fg: AppColors.primary),
         GrowboxButtonVariant.danger =>
           (bg: _dangerPressedBg, fg: _dangerFg),
+        GrowboxButtonVariant.dangerOutline =>
+          (bg: AppColors.errorLight, fg: AppColors.error),
       };
     }
 
@@ -123,6 +135,8 @@ class _GrowboxButtonState extends State<GrowboxButton>
           (bg: AppColors.primarySurface, fg: AppColors.primary),
         GrowboxButtonVariant.danger =>
           (bg: _dangerHoverBg, fg: _dangerFg),
+        GrowboxButtonVariant.dangerOutline =>
+          (bg: AppColors.errorLight, fg: AppColors.error),
       };
     }
 
@@ -131,33 +145,46 @@ class _GrowboxButtonState extends State<GrowboxButton>
       GrowboxButtonVariant.primary => (bg: _defaultBg, fg: _defaultFg),
       GrowboxButtonVariant.secondary => (bg: _secondaryBg, fg: _secondaryFg),
       GrowboxButtonVariant.outline =>
+        (bg: Colors.transparent, fg: AppColors.primary),      GrowboxButtonVariant.text =>
         (bg: Colors.transparent, fg: AppColors.primary),
-      GrowboxButtonVariant.text =>
-        (bg: Colors.transparent, fg: AppColors.primary),
-      GrowboxButtonVariant.danger => (bg: _dangerBg, fg: _dangerFg),
+      GrowboxButtonVariant.danger =>
+        (bg: _dangerBg, fg: _dangerFg),
+      // Ghost destructive: transparent fill + red label, red outline below.
+      GrowboxButtonVariant.dangerOutline =>
+        (bg: Colors.transparent, fg: AppColors.error),
     };
   }
 
+  /// Accent for the two outlined variants — red for destructive, green otherwise.
+  Color get _outlineAccent =>
+      widget.variant == GrowboxButtonVariant.dangerOutline
+          ? AppColors.error
+          : AppColors.primary;
+
   BoxBorder? get _boxBorder {
-    if (widget.variant != GrowboxButtonVariant.outline) return null;
+    if (widget.variant != GrowboxButtonVariant.outline &&
+        widget.variant != GrowboxButtonVariant.dangerOutline) {
+      return null;
+    }
     if (!_isEnabled) {
       return Border.all(color: AppColors.border, width: 1.5);
     }
     if (_isPressed) {
-      return Border.all(color: AppColors.primary, width: 2);
+      return Border.all(color: _outlineAccent, width: 2);
     }
     if (_isHovered) {
       return Border.all(
-        color: AppColors.primary.withAlpha(180),
+        color: _outlineAccent.withAlpha(180),
         width: 1.5,
       );
     }
-    return Border.all(color: AppColors.primary, width: 1.5);
+    return Border.all(color: _outlineAccent, width: 1.5);
   }
 
   double get _elevation {
     if (!_isEnabled ||
         widget.variant == GrowboxButtonVariant.outline ||
+        widget.variant == GrowboxButtonVariant.dangerOutline ||
         widget.variant == GrowboxButtonVariant.text) {
       return 0;
     }
@@ -208,7 +235,14 @@ class _GrowboxButtonState extends State<GrowboxButton>
         fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
-      child: Row(
+      // FittedBox keeps the content inside tight slots (e.g. two buttons
+      // sharing a phone-width card row) by scaling down only when it does
+      // not fit; when it fits — the production case — layout is identical
+      // to a plain min Row.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (widget.isLoading)
@@ -228,6 +262,7 @@ class _GrowboxButtonState extends State<GrowboxButton>
             Text(widget.label),
           ],
         ],
+        ),
       ),
     );
 
