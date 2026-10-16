@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:growbox_vendor/main.dart';
 import 'package:growbox_vendor/app/router.dart';
+import 'package:growbox_vendor/shared/widgets/growbox_card.dart';
 
 import 'load_roboto.dart';
 
@@ -129,7 +130,9 @@ void main() {
     // legend (that needs the wide breakpoint) — legend stacks below.
     final desktopRing =
         tester.getRect(find.byKey(const Key('sales-category-ring')));
-    expect(tester.getTopLeft(find.text('Vegetables')).dy,
+    // .first = the legend row (the summary line below may name the top
+    // category too, and comes later in the tree).
+    expect(tester.getTopLeft(find.text('Vegetables').first).dy,
         greaterThan(desktopRing.bottom),
         reason: 'legend stacks under the ring below the wide threshold');
 
@@ -165,10 +168,35 @@ void main() {
 
     final ringRect =
         tester.getRect(find.byKey(const Key('sales-category-ring')));
-    final legendTop = tester.getTopLeft(find.text('Vegetables'));
+    final legendTop = tester.getTopLeft(find.text('Vegetables').first); // legend row, not the summary line
     expect(legendTop.dx, greaterThan(ringRect.right),
         reason: 'wide screens put the legend beside the ring');
     expect(find.text('Others'), findsOneWidget);
+
+    // ── Dead-space fix: the stretched card must spend its room on content ──
+    final categoryCard = find
+        .ancestor(
+            of: find.text('Sales by Category'),
+            matching: find.byType(GrowboxCard))
+        .first;
+    final cardRect = tester.getRect(categoryCard);
+    // The donut grows into the inner width the legend column doesn't need.
+    expect(ringRect.width, greaterThan(220),
+        reason: 'wide mode sizes the donut from the leftover inner width');
+    expect(ringRect.width, closeTo(ringRect.height, 0.001),
+        reason: 'the donut box stays square');
+    // The bottom band is a real summary line, not air.
+    final summaryLine = find.text('Top category');
+    expect(summaryLine, findsOneWidget,
+        reason: 'the stretched card shows a top-category summary line');
+    final lineRect = tester.getRect(summaryLine);
+    expect(cardRect.bottom - lineRect.bottom, lessThan(40),
+        reason: 'only card padding below the summary — no dead band');
+    // Donut+legend sit centered in the leftover height (spaceBetween).
+    final titleRect = tester.getRect(find.text('Sales by Category'));
+    final freeMid = (titleRect.bottom + lineRect.top) / 2;
+    expect((ringRect.center.dy - freeMid).abs(), lessThan(32),
+        reason: 'donut is vertically centered between title and summary');
     expect(tester.takeException(), isNull);
   });
 

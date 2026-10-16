@@ -136,8 +136,18 @@ class _DashboardScreenState extends State<DashboardScreen>
   static const _mergedShareCutoff = 6;
 
   // Card inner width from which the legend moves beside the ring
-  // (ring 220 + gap 16 + ~165 for the longest label row).
+  // (min ring 220 + gap 16 + ~165 for the longest label row).
   static const _legendBesideMinWidth = 400.0;
+
+  // Horizontal room the legend column needs when it sits beside the ring
+  // (longest label row) and the donut's size cap in that mode. Whatever
+  // inner width the legend doesn't need becomes DONUT SIZE.
+  static const _legendLabelMin = 165.0;
+  static const _ringMaxBeside = 280.0;
+  // The bottom "Top category" summary needs ~260px of inner width for its
+  // longest content (label + dot + name + share + amount) — below this the
+  // line would overflow, so the stacked tablet widths skip it.
+  static const _summaryMinInner = 300.0;
 
   static final _categoryData = _aggregateSmallCategories([
     for (final e in const {
@@ -556,6 +566,14 @@ class _DashboardScreenState extends State<DashboardScreen>
               (constraints.maxWidth - AppDimensions.lg) * 0.4 -
                   AppDimensions.cardPadding * 2;
           final legendBeside = rightInner >= _legendBesideMinWidth;
+          // Beside mode: the donut takes every px of inner width the legend
+          // column doesn't need (capped) — it grows into the free space
+          // instead of the card sitting half empty.
+          final ringSize = legendBeside
+              ? (rightInner - AppDimensions.lg - _legendLabelMin)
+                  .clamp(220.0, _ringMaxBeside)
+                  .toDouble()
+              : 220.0;
           // IntrinsicHeight + stretch: the row lives in a vertical scroll
           // view (unbounded height), so stretch alone is invalid —
           // IntrinsicHeight first measures the taller column and hands
@@ -586,7 +604,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               Expanded(
                 flex: 4,
                 child: _buildSalesByCategoryChart(context, isDark,
-                    legendBeside: legendBeside),
+                    legendBeside: legendBeside,
+                    ringSize: ringSize,
+                    showSummary: rightInner >= _summaryMinInner),
               ),
             ],
             ),
@@ -1027,11 +1047,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   // tap (touch) a segment: the others dim and a value chip appears
   // top-left; tap the gap or the same segment again to return to idle.
   Widget _buildSalesByCategoryChart(BuildContext context, bool isDark,
-      {required bool legendBeside}) {
+      {required bool legendBeside,
+      double ringSize = 220,
+      bool showSummary = false}) {
     final summary = context.watch<SalesProvider>().summary;
     return GrowboxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        // The wide card is STRETCHED by the bento row's IntrinsicHeight to
+        // the left stack's height. spaceBetween turns that forced height
+        // into even gaps around the donut+legend block instead of a dead
+        // band at the bottom; with no slack (narrow stack) the free space
+        // is zero and the layout is unchanged.
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -1042,20 +1070,25 @@ class _DashboardScreenState extends State<DashboardScreen>
               color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: AppDimensions.lg),
           // [legendBeside] is decided by the bento row's width math: a wide
           // card puts the legend BESIDE the ring (saves ~250px of height);
           // a narrow one stacks it below, as before. Decided upstream because
           // a LayoutBuilder here would break the row's IntrinsicHeight
           // (intrinsics can't be computed through layout callbacks).
-          Builder(
+          // The title's 16px gap rides ON the chart block so spaceBetween
+          // splits the leftover height evenly around donut+legend.
+          Padding(
+            padding: const EdgeInsets.only(top: AppDimensions.lg),
+            child: Builder(
             builder: (context) {
               final beside = legendBeside;
               final ring = SizedBox(
-                height: 220,
+                // Beside mode: square, sized from the card's leftover inner
+                // width (computed upstream). Stacked keeps the 220 layout.
+                height: beside ? ringSize : 220,
                 // Full width when stacked: without it the Stack shrink-wraps
                 // to the center KPI and the ring hugs the card edge.
-                width: beside ? 220 : double.infinity,
+                width: beside ? ringSize : double.infinity,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final chartSize = constraints.biggest;
@@ -1214,6 +1247,78 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               );
             },
+          ),
+          ),
+          if (showSummary)
+            _buildTopCategoryLine(isDark, summary.totalSales),
+        ],
+      ),
+    );
+  }
+
+  // ── TOP CATEGORY — one-line summary pinned to the card bottom. The wide
+  // card is stretched to the left stack's height; spaceBetween spreads that
+  // forced height around the donut, and this line spends the last strip of
+  // it on real information instead of air. Shown only when the card is wide
+  // enough for its content (see _summaryMinInner).
+  Widget _buildTopCategoryLine(bool isDark, double totalSales) {
+    final top = _categoryData
+        .where((c) => c.label != 'Others')
+        .reduce((a, b) => a.percentage >= b.percentage ? a : b);
+    return Container(
+      padding: const EdgeInsets.only(top: AppDimensions.md),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: isDark ? AppColors.darkBorder : AppColors.border,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'Top category',
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: top.color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              top.label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${top.percentage}%',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            formatCurrency(totalSales * top.percentage / 100),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+            ),
           ),
         ],
       ),
