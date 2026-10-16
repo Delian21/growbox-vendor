@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/category_colors.dart';
+import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_button.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
@@ -64,18 +65,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Phones keep the floating shortcut; tablet/desktop move Add Product
+    // into the header (see _buildHeader) so the FAB can never sit on top
+    // of the bottom-right grid card's title and price.
+    final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.background,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddProductSheet(context),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Product'),
-      ),
+      floatingActionButton: isMobile
+          ? FloatingActionButton.extended(
+              onPressed: () => _showAddProductSheet(context),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Product'),
+            )
+          : null,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppDimensions.xl),
+        // Mobile: extra bottom room so the last grid row always scrolls
+        // clear of the FAB (~56px tall + the scaffold's 16px margin).
+        padding: isMobile
+            ? const EdgeInsets.fromLTRB(
+                AppDimensions.xl, AppDimensions.xl, AppDimensions.xl,
+                AppDimensions.xl + 72)
+            : const EdgeInsets.all(AppDimensions.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -93,18 +106,36 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildHeader(BuildContext context, bool isDark) {
+    // Same breakpoint as the FAB logic in build(): where there's no FAB,
+    // the header carries the action instead.
+    final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
+    final provider = context.watch<ProductsProvider>();
     return Row(
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('My Products', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
-              const SizedBox(height: 4),
-              Text('42 products listed', style: TextStyle(fontSize: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+              // The top bar already names the page ("Products"); the big
+              // "My Products" heading repeated it, so the count line is
+              // now the header's only text.
+              // Same source as the "x of y products" line under the chips
+              // (the ProductCatalog count) — the two can never drift apart.
+              Text('${provider.products.length} products listed', style: TextStyle(fontSize: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
             ],
           ),
         ),
+        if (!isMobile) ...[
+          const SizedBox(width: AppDimensions.lg),
+          // The old floating Add Product, now parked beside the view toggle
+          // where it can't cover a product card.
+          GrowboxButton(
+            label: 'Add Product',
+            icon: Icons.add,
+            onPressed: () => _showAddProductSheet(context),
+          ),
+        ],
+        const SizedBox(width: AppDimensions.md),
         Container(
           decoration: BoxDecoration(color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant, borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
           child: Row(
@@ -133,6 +164,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Widget _buildSearchBar(BuildContext context, bool isDark) {
     return GrowboxCard(
       padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.sm),
+      borderColor: isDark ? AppColors.darkBorder : AppColors.border,
+      borderWidth: 1,
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
@@ -173,45 +206,80 @@ class _ProductsScreenState extends State<ProductsScreen> {
       'Herbs & Spices',
       'Nut & Seeds',
     ];
+    // One chip builder shared by the wrap and the scroll layouts.
+    Widget chipAt(int index) {
+      final isSelected = _selectedFilter == filters[index];
+      final categoryColor = CategoryColors.forCategory(filters[index]);
+      return FilterChip(
+        avatar: categoryColor == null
+            ? null
+            : Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: categoryColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+        label: Text(filters[index]),
+        selected: isSelected,
+        onSelected: (_) => _onFilterChanged(filters[index]),
+        selectedColor: AppColors.primary,
+        checkmarkColor: Colors.white,
+        labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isSelected ? Colors.white : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+        backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
+        // 1px outline on unselected chips so they read as tappable on the
+        // off-white light background; selected chips fill, so no border.
+        side: BorderSide(
+          color: isSelected
+              ? Colors.transparent
+              : (isDark ? AppColors.darkBorder : AppColors.border),
+          width: 1,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 36,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: filters.length,
-            separatorBuilder: (_, _) => const SizedBox(width: AppDimensions.sm),
-            itemBuilder: (context, index) {
-              final isSelected = _selectedFilter == filters[index];
-              final categoryColor = CategoryColors.forCategory(filters[index]);
-              return FilterChip(
-                avatar: categoryColor == null
-                    ? null
-                    : Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: categoryColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                label: Text(filters[index]),
-                selected: isSelected,
-                onSelected: (_) => _onFilterChanged(filters[index]),
-            selectedColor: AppColors.primary,
-            checkmarkColor: Colors.white,
-            labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isSelected ? Colors.white : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
-            backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-            side: BorderSide.none,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
+        // Roomy enough for the whole strip (≥ mobile breakpoint) → the
+        // chips WRAP onto multiple lines; narrower → keep the horizontal
+        // strip but fade its right edge so it's obvious more chips exist.
+        LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= AppDimensions.mobile) {
+            return Wrap(
+              spacing: AppDimensions.sm,
+              runSpacing: AppDimensions.sm,
+              children: [for (var i = 0; i < filters.length; i++) chipAt(i)],
+            );
+          }
+          return ShaderMask(
+            shaderCallback: (rect) => LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Colors.black,
+                Colors.black,
+                Colors.black.withValues(alpha: 0),
+              ],
+              stops: const [0.0, 0.85, 1.0],
+            ).createShader(rect),
+            blendMode: BlendMode.dstIn,
+            child: SizedBox(
+              height: 36,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: filters.length,
+                separatorBuilder: (_, _) => const SizedBox(width: AppDimensions.sm),
+                itemBuilder: (context, index) => chipAt(index),
+              ),
+            ),
           );
-        },
-      ),
-    ),
+        }),
         const SizedBox(height: AppDimensions.sm),
         Text(
           '$visibleCount of $totalCount products',
@@ -253,7 +321,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // when the info section gained bottom padding, so the extra
                 // height lands on the info half, not the photo — 0.52 keeps a
                 // 78px content block inside a 360px-wide phone card.
-                childAspectRatio: cols >= 4 ? 0.78 : (cols == 3 ? 0.62 : 0.52),
+                // 4-col cards loosened 0.78 → 0.68 so the info block fits
+                // the new stock stepper below the fixed 5:4 photo slot.
+                childAspectRatio: cols >= 4 ? 0.68 : (cols == 3 ? 0.62 : 0.52),
               ),
               itemCount: visible.length,
               itemBuilder: (context, i) => AnimationConfiguration.staggeredGrid(
@@ -300,6 +370,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     required double iconSize,
     BorderRadius? borderRadius,
     Widget? actions,
+    Widget? badge,
   }) {
     return Container(
       width: double.infinity,
@@ -326,10 +397,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
           Center(
             child: Icon(icon, size: iconSize, color: Colors.white.withValues(alpha: 0.9)),
           ),
+          // One crop for every card photo: cover fit, centered. The slot's
+          // fixed aspect (5:4 grid, square list thumb) does the cropping,
+          // so bottles and labels shear the same way on every card.
           if (imageUrl != null && imageUrl.isNotEmpty)
             Image.asset(
               imageUrl,
               fit: BoxFit.cover,
+              alignment: Alignment.center,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
           // Slight dark scrim so the translucent actions disc stays legible
@@ -343,6 +418,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
               top: 6,
               right: 6,
               child: actions,
+            ),
+          // Low-stock tag rides on the photo's top-left, clear of the
+          // three-dot menu — status that isn't just red text, and it
+          // doesn't squeeze the info block.
+          if (badge != null)
+            Positioned(
+              top: 6,
+              left: 6,
+              child: badge,
             ),
         ],
       ),
@@ -377,13 +461,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
         child: GrowboxCard(
       padding: EdgeInsets.zero,
       clipBehavior: Clip.hardEdge,
+      // 1px border in BOTH themes (only the color swaps) so the white
+      // card separates from the off-white light page background.
+      borderColor: isDark ? AppColors.darkBorder : AppColors.border,
+      borderWidth: 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 5:4 split (was 3:2) — the info block now carries ~20px of
-          // bottom padding, so it gets the larger share of the rebalance.
-          Expanded(
-            flex: 5,
+          // Fixed 5:4 photo slot at every breakpoint — one crop for all
+          // cards; the info block takes whatever height the card has left.
+          AspectRatio(
+            aspectRatio: 5 / 4,
             child: _buildProductImage(
               imageUrl: p.imageUrl,
               gradientColors: p.gradientColors,
@@ -392,9 +480,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
               iconSize: 48,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusLg)),
               actions: _buildImageActionsOverlay(context, p, isDark),
+              badge: p.isLowStock ? const GrowboxBadge.error(label: 'Low stock', isSmall: true) : null,
             ),
           ),
-          Expanded(flex: 4, child: Padding(
+          Expanded(child: Padding(
             padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm + 2, AppDimensions.md, AppDimensions.lg + 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,7 +491,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // Full-width name — the actions menu moved onto the image.
                 Text(p.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
-                Text(p.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary)),
+                // Secondary (not tertiary) grey — tertiary failed contrast
+                // against the white card in light mode.
+                Text(p.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
                 const Spacer(),
                 // Price and stock each get their own line — stacking them
                 // beats squeezing both onto one row on narrow cards.
@@ -412,7 +503,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   child: Text.rich(
                     TextSpan(
                       text: '\u20A6${p.price}',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkPrimary : AppColors.primary),
+                      // Neutral ink, not green — green is status-only, so
+                      // the price no longer blends with the stock line.
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
                       children: [
                         TextSpan(
                           text: '/${p.unit}',
@@ -430,6 +523,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     fontWeight: FontWeight.w500,
                     color: p.stock > 10 ? AppColors.success : AppColors.error,
                   ),
+                ),
+                const SizedBox(height: 3),
+                // Quick ±1 stock adjust on the card itself; the three-dot
+                // menu keeps the full Edit sheet for everything else.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _stockStepper(context, p, isDark),
                 ),
               ],
             ),
@@ -461,9 +561,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
               AppDimensions.lg,
               AppDimensions.lg + 4,
             ),
+            borderColor: isDark ? AppColors.darkBorder : AppColors.border,
+            borderWidth: 1,
             child: Row(
               children: [
-                SizedBox(width: 64, height: 64, child: _buildProductImage(imageUrl: p.imageUrl, gradientColors: p.gradientColors, icon: p.icon, isDark: isDark, iconSize: 28, borderRadius: BorderRadius.circular(AppDimensions.radiusMd))),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(width: 64, height: 64, child: _buildProductImage(imageUrl: p.imageUrl, gradientColors: p.gradientColors, icon: p.icon, isDark: isDark, iconSize: 28, borderRadius: BorderRadius.circular(AppDimensions.radiusMd))),
+                    // Tag under the thumb — the name column keeps its width.
+                    if (p.isLowStock) ...[
+                      const SizedBox(height: 4),
+                      const GrowboxBadge.error(label: 'Low stock', isSmall: true),
+                    ],
+                  ],
+                ),
                 const SizedBox(width: AppDimensions.lg),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [Expanded(child: Text(p.name, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary))), _buildActionsMenu(context, p, isDark)]),
@@ -472,15 +584,71 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ])),
                 const SizedBox(width: AppDimensions.lg),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
-                  FittedBox(fit: BoxFit.scaleDown, child: Text('\u20A6${p.price}/${p.unit}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.primary))),
+                  FittedBox(fit: BoxFit.scaleDown, child: Text('\u20A6${p.price}/${p.unit}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary))),
                   const SizedBox(height: 4),
                   Text('${p.stock} in stock', style: TextStyle(fontSize: 12, color: p.stock > 10 ? AppColors.success : AppColors.error)),
+                  const SizedBox(height: 6),
+                  // Same quick stock stepper as the grid card.
+                  _stockStepper(context, p, isDark),
                 ]),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  // ── QUICK STOCK — ±1 stepper right on the card. The three-dot menu
+  // keeps the full Edit sheet; this covers the "just sold one" case.
+  Widget _stockStepper(BuildContext context, ProductItem p, bool isDark) {
+    void apply(int delta) {
+      final next = p.stock + delta;
+      if (next < 0) return;
+      context.read<ProductsProvider>().updateProduct(ProductItem(
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            price: p.price,
+            unit: p.unit,
+            stock: next,
+            icon: p.icon,
+            description: p.description,
+            gradientColors: p.gradientColors,
+            imageUrl: p.imageUrl,
+          ));
+    }
+
+    Widget step(IconData icon, String tag, int delta, String tooltip) =>
+        Tooltip(
+          message: tooltip,
+          child: InkWell(
+            key: Key('stock-$tag-${p.id}'),
+            onTap: () => apply(delta),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+              ),
+              child: Icon(icon, size: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+            ),
+          ),
+        );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.border, width: 1),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        step(Icons.remove, 'dec', -1, 'Decrease stock'),
+        const SizedBox(width: 2),
+        step(Icons.add, 'inc', 1, 'Increase stock'),
+      ]),
     );
   }
 

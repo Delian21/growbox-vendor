@@ -8,7 +8,6 @@ import '../../app/theme_provider.dart';
 import '../../app/providers/auth_provider.dart';
 import '../../app/providers/notifications_provider.dart';
 import '../../app/providers/orders_provider.dart';
-import '../../app/providers/store_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/app_strings.dart';
@@ -532,7 +531,8 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: isDark ? AppColors.error : AppColors.warning,
+                            // One badge color for both themes (matches the header bell's red).
+                          color: AppColors.error,
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: isDark ? AppColors.darkBackground : Colors.white,
@@ -564,7 +564,8 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                       decoration: BoxDecoration(
-                        color: isDark ? AppColors.error : AppColors.warning,
+                        // One badge color for both themes (matches the header bell's red).
+                          color: AppColors.error,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -711,54 +712,6 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    // Store status indicator — lives here since the dashboard
-                    // welcome header was trimmed down to a single line.
-                    if (isMobile) ...[
-                      const SizedBox(width: AppDimensions.sm),
-                      // Store status pill — StoreProvider state with a real
-                      // toggle, same "Store: Online/Offline" wording as the
-                      // dashboard's subtitle pill.
-                      Builder(builder: (context) {
-                        final isOpen = context.watch<StoreProvider>().isOpen;
-                        return InkWell(
-                          onTap: () =>
-                              context.read<StoreProvider>().toggleStoreStatus(),
-                          borderRadius: BorderRadius.circular(999),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: isOpen
-                                        ? AppColors.success
-                                        : AppColors.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isOpen ? 'Store: Online' : 'Store: Offline',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
                   ],
                 ),
               ),
@@ -1377,7 +1330,8 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                                                 width: badgeCount > 9 ? 18 : 16,
                                                 height: 16,
                                                 decoration: BoxDecoration(
-                                                  color: isDark ? AppColors.error : AppColors.warning,
+                                                  // One badge color for both themes (matches the header bell's red).
+                          color: AppColors.error,
                                                   borderRadius: BorderRadius.circular(8),
                                                   border: Border.all(
                                                     color: Colors.white,

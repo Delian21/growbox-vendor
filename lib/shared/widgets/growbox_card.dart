@@ -6,6 +6,12 @@ class GrowboxCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final bool hasBorder;
+
+  /// Explicit border color/width. When set, the card gets this border in
+  /// BOTH themes (only the color differs) — same structure everywhere.
+  /// Unset keeps the legacy rule (always bordered in light, opt-in in dark).
+  final Color? borderColor;
+  final double borderWidth;
   final bool hasShadow;
   final Color? backgroundColor;
   final Clip clipBehavior;
@@ -15,6 +21,8 @@ class GrowboxCard extends StatelessWidget {
     required this.child,
     this.padding,
     this.hasBorder = false,
+    this.borderColor,
+    this.borderWidth = 0.5,
     this.hasShadow = true,
     this.backgroundColor,
     this.clipBehavior = Clip.none,
@@ -34,14 +42,16 @@ class GrowboxCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-        border: hasBorder || !isDark
-            ? Border.all(
-                color: isDark
-                    ? AppColors.darkBorder.withValues(alpha: 0.4)
-                    : AppColors.borderLight,
-                width: 0.5,
-              )
-            : null,
+        border: borderColor != null
+            ? Border.all(color: borderColor!, width: borderWidth)
+            : hasBorder || !isDark
+                ? Border.all(
+                    color: isDark
+                        ? AppColors.darkBorder.withValues(alpha: 0.4)
+                        : AppColors.borderLight,
+                    width: 0.5,
+                  )
+                : null,
         boxShadow: hasShadow
             ? [
                 // Soft, diffused shadow — Nordic feel
