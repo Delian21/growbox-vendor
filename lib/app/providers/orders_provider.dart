@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../data/models/order.dart';
 
 class OrdersProvider extends ChangeNotifier {
@@ -32,8 +36,76 @@ class OrdersProvider extends ChangeNotifier {
       ? _orders.length
       : _orders.where((o) => o.status == status).length;
 
-  OrdersProvider() {
-    _loadMockOrders();
+  /// Unfiltered orders. Consumers that need the whole picture (e.g. the
+  /// Sales page's revenue) must not be affected by the Orders page's
+  /// status filter, so they read this instead of [orders].
+  List<Order> get allOrders => List.unmodifiable(_orders);
+
+  /// Prefs key holding the decided-state overlay (status + rejection
+  /// reason per order id) so decisions survive a page reload.
+  static const String _stateKey = 'orders_state';
+
+  /// [initialOrders] injects seed data (widget tests); production loads
+  /// the in-memory demo orders. Decided states saved earlier (accept /
+  /// reject + reason) are re-applied on top of the seed.
+  OrdersProvider({List<Order>? initialOrders}) {
+    if (initialOrders != null) {
+      _orders = List.of(initialOrders);
+    } else {
+      _loadMockOrders();
+    }
+    _restoreState();
+  }
+
+  /// Re-applies persisted decisions (status + notes) onto the seed orders.
+  /// Fire-and-forget: a brief flash of seed state on first paint is
+  /// acceptable for the demo data set.
+  Future<void> _restoreState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_stateKey);
+      if (raw == null) return;
+      final Map<String, dynamic> saved = jsonDecode(raw);
+
+      var changed = false;
+      final restored = <Order>[];
+      for (final order in _orders) {
+        final entry = saved[order.id];
+        if (entry is! Map<String, dynamic>) {
+          restored.add(order);
+          continue;
+        }
+        final status = OrderStatus.values.asNameMap()[entry['status']];
+        if (status == null) {
+          restored.add(order);
+          continue;
+        }
+        final notes = entry['notes'];
+        restored.add(order.copyWith(
+          status: status,
+          notes: notes is String && notes.isNotEmpty ? notes : null,
+        ));
+        changed = true;
+      }
+      _orders = restored;
+      if (changed) notifyListeners();
+    } catch (_) {
+      // A corrupt/absent store just means "all seed orders" — never crash.
+    }
+  }
+
+  /// Writes every order's current status (+ rejection reason) to prefs —
+  /// the overlay [_restoreState] replays on the next launch.
+  Future<void> _persistState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final state = {
+      for (final o in _orders)
+        o.id: {
+          'status': o.status.name,
+          if (o.notes != null && o.notes!.isNotEmpty) 'notes': o.notes,
+        },
+    };
+    await prefs.setString(_stateKey, jsonEncode(state));
   }
 
   void _loadMockOrders() {
@@ -144,11 +216,39 @@ class OrdersProvider extends ChangeNotifier {
     final index = _orders.indexWhere((o) => o.id == orderId);
     if (index != -1) {
       _orders[index] = _orders[index].copyWith(status: newStatus, notes: notes);
+      await _persistState();
     }
 
     _isLoading = false;
     notifyListeners();
     return index != -1;
+  }
+
+  /// Accepts several pending orders in one action: one simulated latency,
+  /// one persist, one repaint. Non-pending or unknown ids are skipped;
+  /// returns how many orders were actually accepted.
+  Future<int> acceptOrders(List<String> orderIds) async {
+    if (orderIds.isEmpty) return 0;
+
+    _isLoading = true;
+    notifyListeners();
+
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    final wanted = orderIds.toSet();
+    var accepted = 0;
+    for (var i = 0; i < _orders.length; i++) {
+      final order = _orders[i];
+      if (wanted.contains(order.id) && order.status == OrderStatus.pending) {
+        _orders[i] = order.copyWith(status: OrderStatus.accepted);
+        accepted++;
+      }
+    }
+    if (accepted > 0) await _persistState();
+
+    _isLoading = false;
+    notifyListeners();
+    return accepted;
   }
 
   Order? getOrderById(String id) {

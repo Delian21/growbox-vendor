@@ -771,18 +771,21 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
   }
 
   /// Returns the number of unread items for a given nav route.
+  ///
+  /// Uses [watch] (not [read]) so the badge moves when the count changes —
+  /// e.g. accepting an order on the dashboard must drop the pending badge.
   int _getNavBadgeCount(String route) {
     switch (route) {
       case '/notifications':
         try {
-          final count = context.read<NotificationsProvider>().unreadCount;
+          final count = context.watch<NotificationsProvider>().unreadCount;
           return count;
         } catch (_) {
           return 0;
         }
       case '/orders':
         try {
-          final count = context.read<OrdersProvider>().pendingCount;
+          final count = context.watch<OrdersProvider>().pendingCount;
           return count;
         } catch (_) {
           return 0;
