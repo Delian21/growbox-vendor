@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
@@ -7,7 +10,10 @@ import '../../core/utils/formatters.dart';
 import '../../app/providers/sales_provider.dart';
 import '../../data/models/sales_data.dart';
 import '../../shared/widgets/growbox_card.dart';
-import '../../shared/widgets/growbox_badge.dart';
+import '../../shared/widgets/growbox_filter_chip.dart';
+import '../../shared/widgets/growbox_page_header.dart';
+import '../../shared/widgets/growbox_status_pill.dart';
+import '../../shared/widgets/growbox_table.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
 import '../../shared/widgets/growbox_responsive_grid.dart';
 
@@ -23,6 +29,10 @@ class SalesScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const GrowboxPageHeader(
+            subtitle: 'Revenue, earnings and transactions from completed orders',
+          ),
+          const SizedBox(height: AppDimensions.lg),
           _buildPeriodFilter(context, isDark),
           const SizedBox(height: AppDimensions.xl),
           _buildSummaryCards(context, isDark),
@@ -55,27 +65,10 @@ class SalesScreen extends StatelessWidget {
           final period = periods[index];
           final isSelected = provider.selectedPeriod == period.value;
 
-          return FilterChip(
-            label: Text(period.label),
+          return GrowboxFilterChip(
+            label: period.label,
             selected: isSelected,
             onSelected: (_) => provider.setPeriod(period.value),
-            selectedColor: AppColors.primary,
-            checkmarkColor: Colors.white,
-            labelStyle: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isSelected
-                  ? Colors.white
-                  : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
-            ),
-            backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-            side: BorderSide.none,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
           );
         },
       ),
@@ -86,13 +79,19 @@ class SalesScreen extends StatelessWidget {
   Widget _buildSummaryCards(BuildContext context, bool isDark) {
     final provider = context.watch<SalesProvider>();
     final summary = provider.summary;
+    final period = provider.selectedPeriod;
 
     final primary = _SummaryCard(
       title: 'Total Sales',
       value: formatCurrency(summary.totalSales),
     );
-    final sparkSpots = _sparkSpots(provider.transactions, provider.selectedPeriod);
-    final sparkDelta = _sparkDelta(sparkSpots);
+    // 'All' shows the raw total only — no sparkline, no comparison. The
+    // other filters get a trend line plus a correctly labelled change vs
+    // the equivalent previous window (yesterday / last week / last month).
+    final showComparison = period != 'all';
+    final sparkSpots =
+        showComparison ? _sparkSpots(provider.transactions, period) : const <FlSpot>[];
+    final sparkDelta =        showComparison ? provider.revenueDelta(period) : null;
     final cards = [
       _SummaryCard(
         title: 'Vendor Earnings',
@@ -110,7 +109,7 @@ class SalesScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
-            provider.selectedPeriod),
+            period),
         const SizedBox(height: AppDimensions.lg),
         GrowboxResponsiveGrid(
           items: [
@@ -219,38 +218,52 @@ class SalesScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  // Green/red delta pill — trend arrow + change vs the previous bucket,
-  // matching the dashboard hero's badge style.
+  }  // Delta pill — trend arrow + change vs the equivalent previous window.
+  // Neutral (grey, flat icon) when the change is exactly 0%.
   Widget _changeBadge(double deltaPct, bool isDark, {required String period}) {
-    final positive = deltaPct >= 0;
-    final color = positive
-        ? (isDark ? AppColors.darkPrimary : AppColors.success)
-        : AppColors.error;
-    final note = period == 'today' ? 'vs previous hour' : 'vs previous day';
+    final neutral = deltaPct == 0;
+    final positive = deltaPct > 0;
+    final note = switch (period) {
+      'today' => 'vs yesterday',
+      'week' => 'vs last week',
+      'month' => 'vs last month',
+      _ => 'vs previous period',
+    };
+
+    final Color color;
+    final Color bg;
+    final IconData icon;
+    if (neutral) {
+      color = isDark ? AppColors.darkTextSecondary : AppColors.textSecondary;
+      bg = isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant;
+      icon = Icons.trending_flat;
+    } else if (positive) {
+      color = isDark ? AppColors.darkPrimary : AppColors.success;
+      bg = isDark
+          ? AppColors.success.withValues(alpha: 0.15)
+          : AppColors.successLight;
+      icon = Icons.trending_up;
+    } else {
+      color = AppColors.error;
+      bg = isDark
+          ? AppColors.error.withValues(alpha: 0.15)
+          : AppColors.errorLight;
+      icon = Icons.trending_down;
+    }
+
     final text =
-        '${positive ? '+' : ''}${deltaPct.toStringAsFixed(1)}% $note';
-    return Container(
+        '${neutral ? '' : (positive ? '+' : '')}${deltaPct.toStringAsFixed(1)}% $note';
+
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: positive
-            ? (isDark
-                ? AppColors.success.withValues(alpha: 0.15)
-                : AppColors.successLight)
-            : (isDark
-                ? AppColors.error.withValues(alpha: 0.15)
-                : AppColors.errorLight),
+        color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            positive ? Icons.trending_up : Icons.trending_down,
-            size: 12,
-            color: color,
-          ),
+          Icon(icon, size: 12, color: color),
           const SizedBox(width: 3),
           Text(
             text,
@@ -265,22 +278,13 @@ class SalesScreen extends StatelessWidget {
     );
   }
 
-  // Change between the last two sparkline buckets, as a fraction (e.g.
-  // 0.125 for +12.5%). Null when it can't be computed.
-  double? _sparkDelta(List<FlSpot> spots) {
-    if (spots.length < 2) return null;
-    final prev = spots[spots.length - 2].y;
-    final last = spots.last.y;
-    if (prev <= 0) return null;
-    return (last - prev) / prev * 100;
-  }
-
   // Period-aware revenue series for the sparkline: transactions bucketed by
-  // hour for 'today', by day otherwise. Refunds excluded.
+  // hour for 'today', by day otherwise. Completed (revenue-bearing)
+  // transactions only, so the line always agrees with the Total Sales card.
   List<FlSpot> _sparkSpots(List<TransactionRecord> txns, String period) {
     final grouped = <String, double>{};
     for (final t in txns) {
-      if (t.status == 'refunded') continue;
+      if (t.status != 'completed') continue;
       final d = t.date;
       final key = period == 'today'
           ? '${d.hour.toString().padLeft(2, '0')}:00'
@@ -450,6 +454,14 @@ class SalesScreen extends StatelessWidget {
   Widget _buildSalesChart(BuildContext context, bool isDark) {
     final provider = context.watch<SalesProvider>();
     final chartData = provider.chartData;
+    // Round, evenly spaced ticks starting at 0: a "nice" step targeting
+    // ~5 intervals, with the top snapped up to a multiple of it so the
+    // highest label can never overlap the plot edge (the old free-range
+    // axis produced colliding "107k" labels and hid the zero).
+    final maxAmount = chartData.isNotEmpty
+        ? chartData.map((e) => e.amount).reduce((a, b) => a > b ? a : b)
+        : 0.0;
+    final axis = _niceAxis(maxAmount);
 
     return GrowboxCard(
       child: Column(
@@ -470,14 +482,21 @@ class SalesScreen extends StatelessWidget {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: chartData.isNotEmpty
-                    ? chartData.map((e) => e.amount).reduce((a, b) => a > b ? a : b) * 1.2
-                    : 100000,
+                maxY: axis.maxY,
                 barTouchData: BarTouchData(
+                  // Built-in touches cover tap (touch) and hover (mouse/web).
+                  mouseCursorResolver: (
+                    FlTouchEvent event,
+                    BarTouchResponse? response,
+                  ) =>
+                      SystemMouseCursors.click,
                   touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => isDark
+                        ? AppColors.darkSurfaceVariant
+                        : AppColors.textPrimary,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
-                        formatCurrency(rod.toY),
+                        '${chartData[groupIndex].label} · ${formatCurrency(rod.toY)}',
                         const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -511,11 +530,11 @@ class SalesScreen extends StatelessWidget {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
+                      interval: axis.interval,
                       reservedSize: 50,
                       getTitlesWidget: (value, meta) {
-                        if (value == 0) return const Text('');
                         return Text(
-                          '${(value / 1000).toStringAsFixed(0)}k',
+                          _axisLabel(value),
                           style: TextStyle(
                             fontSize: 11,
                             color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
@@ -543,7 +562,7 @@ class SalesScreen extends StatelessWidget {
                       BarChartRodData(
                         toY: entry.value.amount,
                         color: AppColors.primary,
-                        width: 10,
+                        width: 18,
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(AppDimensions.radiusSm),
                         ),
@@ -559,19 +578,41 @@ class SalesScreen extends StatelessWidget {
     );
   }
 
+  // "Nice" chart axis: a round step (1/2/2.5/5 × 10ⁿ) targeting ~5
+  // intervals, with the top snapped up to a whole multiple of it — ticks
+  // are evenly spaced, start at 0, and the top label always sits exactly
+  // on the plot's upper bound instead of colliding with its neighbour.
+  ({double maxY, double interval}) _niceAxis(double maxValue) {
+    if (maxValue <= 0) return (maxY: 1000, interval: 500);
+    final target = maxValue / 5;
+    final magnitude =
+        math.pow(10, (math.log(target) / math.ln10).floor()).toDouble();
+    final step = [1, 2, 2.5, 5, 10]
+        .map((m) => m * magnitude)
+        .firstWhere((s) => s >= target, orElse: () => 10 * magnitude);
+    final intervals = (maxValue / step).ceil();
+    return (maxY: intervals * step, interval: step);
+  }
+
+  // Compact axis label with the dashboard's ₦ symbol: ₦0, ₦5k, ₦20k …
+  String _axisLabel(double value) {
+    if (value == 0) return '₦0';
+    if (value % 1000 == 0) return '₦${value ~/ 1000}k';
+    return '₦${(value / 1000).toStringAsFixed(1)}k';
+  }
+
   // ── TRANSACTIONS TABLE ──
   Widget _buildTransactionsTable(BuildContext context, bool isDark) {
     final provider = context.watch<SalesProvider>();
     final transactions = provider.transactions;
 
-    if (transactions.isEmpty) {
-      return GrowboxCard(
-        child: GrowboxEmptyState(
-          icon: Icons.receipt_long_outlined,
-          title: 'No transactions yet',
-          subtitle: 'Completed orders will appear here as transactions.',
-        ),
-      );
+    if (transactions.isEmpty) {        return GrowboxCard(
+          child: GrowboxEmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'No transactions yet',
+            subtitle: 'Orders appear here as transactions while they progress.',
+          ),
+        );
     }
 
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
@@ -595,7 +636,7 @@ class SalesScreen extends StatelessWidget {
             children: [
               if (!isMobile) ...[
                 _buildTableHeader(isDark),
-                Divider(height: 1, color: isDark ? AppColors.darkBorder : AppColors.border),
+                GrowboxTable.headerDivider(isDark),
               ],
               ...transactions.map((txn) => _buildTransactionRow(context, txn, isDark)),
             ],
@@ -606,38 +647,20 @@ class SalesScreen extends StatelessWidget {
   }
 
   Widget _buildTableHeader(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.lg,
-        vertical: AppDimensions.md,
-      ),
-      child: Row(
-        children: [
-          Expanded(flex: 2, child: _tableCol('Transaction', isDark)),
-          Expanded(flex: 2, child: _tableCol('Order', isDark)),
-          Expanded(flex: 3, child: _tableCol('Product', isDark)),
-          Expanded(flex: 1, child: _tableCol('Qty', isDark)),
-          Expanded(flex: 2, child: _tableCol('Amount', isDark)),
-          Container(
-            constraints: const BoxConstraints(minWidth: 100),
-            child: _tableCol('Status', isDark),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(width: 80, child: _tableCol('Date', isDark)),
-        ],
-      ),
-    );
-  }
-
-  Widget _tableCol(String text, bool isDark) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-        letterSpacing: 0.5,
-      ),
+    return GrowboxTable.headerRow(
+      children: [
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Transaction', isDark)),
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Order', isDark)),
+        Expanded(flex: 3, child: GrowboxTable.headerCell('Product', isDark)),
+        Expanded(flex: 1, child: GrowboxTable.headerCell('Qty', isDark)),
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Amount', isDark)),
+        Container(
+          constraints: const BoxConstraints(minWidth: 100),
+          child: GrowboxTable.headerCell('Status', isDark),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(width: 80, child: GrowboxTable.headerCell('Date', isDark)),
+      ],
     );
   }
 
@@ -646,16 +669,9 @@ class SalesScreen extends StatelessWidget {
 
     // Mobile: Card layout
     if (isMobile) {
-      return Container(
-        padding: const EdgeInsets.all(AppDimensions.lg),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.border,
-              width: 0.5,
-            ),
-          ),
-        ),
+      return GrowboxTable.row(
+        isDark: isDark,
+        mobile: true,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -664,55 +680,44 @@ class SalesScreen extends StatelessWidget {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        txn.productName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                    children: [                        Text(
+                          txn.productName,
+                          style: GrowboxTable.strongStyle(isDark),
                         ),
-                      ),
                       const SizedBox(height: 2),
-                      Text(
-                        txn.id,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            txn.id,
+                            style: GrowboxTable.metaStyle(isDark),
+                          ),
+                          const SizedBox(width: 6),
+                          // Order ID links through to the order details.
+                          _orderLink(context, txn.orderId, isDark, fontSize: 12),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                _txnStatusBadge(txn.status),
+                GrowboxStatusPill(status: txn.status),
               ],
             ),
             const SizedBox(height: AppDimensions.sm),
             Row(
               children: [
                 Text(
-                  'Qty: ${txn.quantity}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                  ),
+                  'Qty: ${txn.quantity} ${txn.unit}',
+                  style: GrowboxTable.metaStyle(isDark),
                 ),
                 const SizedBox(width: AppDimensions.md),
                 Text(
                   formatCurrency(txn.totalAmount),
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                  ),
+                  style: GrowboxTable.strongStyle(isDark),
                 ),
                 const Spacer(),
                 Text(
                   _formatDate(txn.date),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-                  ),
+                  style: GrowboxTable.metaStyle(isDark),
                 ),
               ],
             ),
@@ -722,41 +727,20 @@ class SalesScreen extends StatelessWidget {
     }
 
     // Desktop: Table row
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.lg,
-        vertical: AppDimensions.md,
-      ),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.border,
-            width: 0.5,
-          ),
-        ),
-      ),
+    return GrowboxTable.row(
+      isDark: isDark,
       child: Row(
         children: [
           Expanded(
             flex: 2,
             child: Text(
               txn.id,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-              ),
+              style: GrowboxTable.strongStyle(isDark),
             ),
           ),
           Expanded(
             flex: 2,
-            child: Text(
-              txn.orderId,
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-              ),
-            ),
+            child: _orderLink(context, txn.orderId, isDark),
           ),
           Expanded(
             flex: 3,
@@ -765,17 +749,11 @@ class SalesScreen extends StatelessWidget {
               children: [
                 Text(
                   txn.productName,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                  ),
+                  style: GrowboxTable.secondaryStyle(isDark),
                 ),
                 Text(
-                  '${formatCurrency(txn.unitPrice)} / unit',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-                  ),
+                  '${formatCurrency(txn.unitPrice)} / ${txn.unit}',
+                  style: GrowboxTable.mutedStyle(isDark),
                 ),
               ],
             ),
@@ -783,37 +761,27 @@ class SalesScreen extends StatelessWidget {
           Expanded(
             flex: 1,
             child: Text(
-              '${txn.quantity}',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-              ),
+              '${txn.quantity} ${txn.unit}',
+              style: GrowboxTable.secondaryStyle(isDark),
             ),
           ),
           Expanded(
             flex: 2,
             child: Text(
               formatCurrency(txn.totalAmount),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-              ),
+              style: GrowboxTable.strongStyle(isDark),
             ),
           ),
           Container(
             constraints: const BoxConstraints(minWidth: 100),
-            child: _txnStatusBadge(txn.status),
+            child: GrowboxStatusPill(status: txn.status),
           ),
           const SizedBox(width: 12),
           SizedBox(
             width: 80,
             child: Text(
               _formatDate(txn.date),
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary,
-              ),
+              style: GrowboxTable.metaStyle(isDark),
             ),
           ),
         ],
@@ -821,28 +789,36 @@ class SalesScreen extends StatelessWidget {
     );
   }
 
-  Widget _txnStatusBadge(String status) {
-    return switch (status) {
-      'completed' => const GrowboxBadge(
-          label: 'Completed',
-          backgroundColor: AppColors.completedLight,
-          textColor: AppColors.completed,
-          isSmall: true,
+  // The Order ID as a link to that order's details page. Uses the primary
+  // token at w600 — a real affordance (click cursor + tap target) and a
+  // big contrast jump from the old grey secondary text.
+  Widget _orderLink(
+    BuildContext context,
+    String orderId,
+    bool isDark, {
+    double fontSize = 13,
+  }) {
+    return InkWell(
+      // Percent-encode: ids start with '#', which GoRouter would otherwise
+      // treat as a URL fragment and drop the path parameter.
+      onTap: () => context.go('/orders/${Uri.encodeComponent(orderId)}'),
+      mouseCursor: SystemMouseCursors.click,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(
+          orderId,
+          style: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w600,
+            color: isDark ? AppColors.darkPrimary : AppColors.primary,
+            decoration: TextDecoration.underline,
+            decorationColor: (isDark ? AppColors.darkPrimary : AppColors.primary)
+                .withValues(alpha: 0.4),
+          ),
         ),
-      'pending' => const GrowboxBadge(
-          label: 'Pending',
-          backgroundColor: AppColors.pendingLight,
-          textColor: AppColors.pending,
-          isSmall: true,
-        ),
-      'refunded' => const GrowboxBadge(
-          label: 'Refunded',
-          backgroundColor: AppColors.cancelledLight,
-          textColor: AppColors.cancelled,
-          isSmall: true,
-        ),
-      _ => const SizedBox.shrink(),
-    };
+      ),
+    );
   }
 
   String _formatDate(DateTime date) {

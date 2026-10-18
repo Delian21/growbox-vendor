@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../app/providers/orders_provider.dart';
-import '../../shared/widgets/growbox_badge.dart';
+import '../../shared/widgets/growbox_status_pill.dart';
 import '../../shared/widgets/growbox_button.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../data/models/order.dart';
@@ -71,16 +71,22 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    'Order ${order.id}',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  // Flexible + ellipsis: on narrow phones the title must
+                  // yield space instead of overflowing the badge row.
+                  Flexible(
+                    child: Text(
+                      'Order ${order.id}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppDimensions.md),
-                  _statusBadge(order.status),
+                  GrowboxStatusPill(status: order.status.name),
                 ],
               ),
               const SizedBox(height: 4),
@@ -431,12 +437,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             children: [
               const Icon(Icons.check_circle, color: AppColors.success, size: 20),
               const SizedBox(width: AppDimensions.sm),
-              Text(
-                'This order has been completed',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.success,
+              Flexible(
+                child: Text(
+                  'This order has been completed',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.success,
+                  ),
                 ),
               ),
             ],
@@ -456,12 +466,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             children: [
               const Icon(Icons.cancel, color: AppColors.cancelled, size: 20),
               const SizedBox(width: AppDimensions.sm),
-              Text(
-                'This order has been cancelled',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.cancelled,
+              Flexible(
+                child: Text(
+                  'This order has been cancelled',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.cancelled,
+                  ),
                 ),
               ),
             ],
@@ -481,8 +495,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
     final currentIndex = steps.indexOf(order.status);
 
-    return Column(
-      children: steps.asMap().entries.map((entry) {
+    final rows = steps.asMap().entries.map<Widget>((entry) {
         final index = entry.key;
         final step = entry.value;
         final isCompleted = index <= currentIndex;
@@ -520,52 +533,64 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
             ),
           ],
         );
-      }).toList(),
-    );
+      }).toList();
+
+    // Rejected orders never reach a normal step: record the decision —
+    // and the vendor's reason, when given — directly on the timeline.
+    if (order.status == OrderStatus.cancelled) {
+      final reason = order.notes;
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(top: AppDimensions.sm),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: AppColors.cancelled,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
+              ),
+              const SizedBox(width: AppDimensions.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rejected',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.cancelled,
+                      ),
+                    ),
+                    if (reason != null && reason.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Reason: $reason',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(children: rows);
   }
 
 
-
-  Widget _statusBadge(OrderStatus status) {
-    return switch (status) {
-      OrderStatus.pending => const GrowboxBadge(
-          label: 'Pending',
-          backgroundColor: AppColors.pendingLight,
-          textColor: AppColors.pending,
-          isSmall: true,
-        ),
-      OrderStatus.accepted => const GrowboxBadge(
-          label: 'Accepted',
-          backgroundColor: AppColors.acceptedLight,
-          textColor: AppColors.accepted,
-          isSmall: true,
-        ),
-      OrderStatus.preparing => const GrowboxBadge(
-          label: 'Preparing',
-          backgroundColor: AppColors.preparingLight,
-          textColor: AppColors.preparing,
-          isSmall: true,
-        ),
-      OrderStatus.ready => const GrowboxBadge(
-          label: 'Ready',
-          backgroundColor: AppColors.readyLight,
-          textColor: AppColors.ready,
-          isSmall: true,
-        ),
-      OrderStatus.completed => const GrowboxBadge(
-          label: 'Completed',
-          backgroundColor: AppColors.completedLight,
-          textColor: AppColors.completed,
-          isSmall: true,
-        ),
-      OrderStatus.cancelled => const GrowboxBadge(
-          label: 'Cancelled',
-          backgroundColor: AppColors.cancelledLight,
-          textColor: AppColors.cancelled,
-          isSmall: true,
-        ),
-    };
-  }
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';

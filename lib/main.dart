@@ -21,7 +21,10 @@ List<SingleChildWidget> growboxProviders() => [
       ChangeNotifierProvider(create: (_) => AuthProvider()),
       ChangeNotifierProvider(create: (_) => ProductsProvider()),
       ChangeNotifierProvider(create: (_) => OrdersProvider()),
-      ChangeNotifierProvider(create: (_) => SalesProvider()),
+      // Sales derives from the orders — same source of truth for every
+      // number on the Sales page and the dashboard ring.
+      ChangeNotifierProvider(
+          create: (ctx) => SalesProvider(ctx.read<OrdersProvider>())),
       ChangeNotifierProvider(create: (_) => StoreProvider()..loadFromPrefs()),
       ChangeNotifierProvider(create: (_) => NotificationsProvider()),
     ];

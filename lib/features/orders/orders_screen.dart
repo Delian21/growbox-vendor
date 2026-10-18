@@ -4,10 +4,14 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../app/providers/orders_provider.dart';
-import '../../shared/widgets/growbox_badge.dart';
+import '../../shared/widgets/growbox_filter_chip.dart';
 import '../../shared/widgets/growbox_button.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
+import '../../shared/widgets/growbox_page_header.dart';
+import '../../shared/widgets/growbox_status_pill.dart';
+import '../../shared/widgets/growbox_table.dart';
+import '../../shared/widgets/growbox_table_action.dart';
 import '../../data/models/order.dart';
 import '../../shared/widgets/shimmer_loader.dart';
 import '../../shared/utils/snackbar_helper.dart';
@@ -21,22 +25,34 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
+  /// Pending orders ticked for the bulk "Accept selected" action.
+  final Set<String> _selectedPending = {};
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ordersProvider = context.watch<OrdersProvider>();
     final orders = ordersProvider.orders;
 
+    // Drop selections whose orders are no longer pending in the current
+    // view (accepted elsewhere, rejected, filtered out).
+    _selectedPending.removeWhere((id) =>
+        !orders.any((o) => o.id == id && o.status == OrderStatus.pending));
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(context, isDark, ordersProvider),
+          GrowboxPageHeader(subtitle: '${ordersProvider.totalCount} total orders'),
           const SizedBox(height: AppDimensions.lg),
           _buildTabs(context, isDark, ordersProvider),
           const SizedBox(height: AppDimensions.lg),
-                    if (ordersProvider.isLoading)
+          if (_selectedPending.isNotEmpty) ...[
+            _buildBulkBar(context, isDark),
+            const SizedBox(height: AppDimensions.lg),
+          ],
+          if (ordersProvider.isLoading)
             GrowboxCard(
               padding: EdgeInsets.zero,
               child: Column(
@@ -49,29 +65,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
             _buildOrdersTable(context, isDark, orders),
         ],
       ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, bool isDark, OrdersProvider provider) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Orders',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${provider.totalCount} total orders',
-                style: TextStyle(fontSize: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -97,25 +90,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           final tab = tabs[index];
           final isSelected = provider.filterStatus == tab.status;
 
-          return FilterChip(
-            label: Text('${tab.label} (${provider.countFor(tab.status)})'),
+          return GrowboxFilterChip(
+            label: tab.label,
+            count: provider.countFor(tab.status),
             selected: isSelected,
             onSelected: (_) => provider.setFilter(tab.status),
-            selectedColor: isDark ? AppColors.primaryDark : AppColors.primary,
-            checkmarkColor: isDark ? AppColors.darkPrimary : Colors.white,
-            labelStyle: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isSelected
-                  ? (isDark ? AppColors.darkPrimary : Colors.white)
-                  : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
-            ),
-            backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-            side: BorderSide.none,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
           );
         },
       ),
@@ -128,7 +107,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // non-pending rows) so nothing shifts when a row has buttons.
   static const double _statusColWidth = 90;
   static const double _timeColWidth = 80;
-  static const double _actionsColWidth = 148;
+  static const double _actionsColWidth = 176;
 
   Widget _buildOrdersTable(BuildContext context, bool isDark, List<Order> orders) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
@@ -141,7 +120,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           // Header row mirrors the dashboard's Recent Orders table style.
           if (!isMobile) ...[
             _buildTableHeader(context, isDark),
-            Divider(height: 1, color: isDark ? AppColors.darkBorder : AppColors.border),
+            GrowboxTable.headerDivider(isDark),
           ],
           ...orders.map((order) => _buildOrderRow(context, order, isDark)),
         ],
@@ -150,35 +129,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildTableHeader(BuildContext context, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.md),
-      child: Row(
-        children: [
-          // Same flex/fixed widths as _buildOrderRow's desktop branch.
-          Expanded(flex: 2, child: _tableHeader('Order', isDark)),
-          Expanded(flex: 3, child: _tableHeader('Items', isDark)),
-          Expanded(flex: 2, child: _tableHeader('Amount', isDark)),
-          SizedBox(width: _statusColWidth, child: _tableHeader('Status', isDark)),
-          const SizedBox(width: AppDimensions.md),
-          SizedBox(width: _timeColWidth, child: _tableHeader('Time', isDark)),
-          SizedBox(
-            width: _actionsColWidth,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _tableHeader('Actions', isDark),
-            ),
+    return GrowboxTable.headerRow(
+      children: [
+        // Same flex/fixed widths as _buildOrderRow's desktop branch.
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Order', isDark)),
+        Expanded(flex: 3, child: GrowboxTable.headerCell('Items', isDark)),
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Amount', isDark)),
+        SizedBox(width: _statusColWidth, child: GrowboxTable.headerCell('Status', isDark)),
+        const SizedBox(width: AppDimensions.md),
+        SizedBox(width: _timeColWidth, child: GrowboxTable.headerCell('Time', isDark)),
+        SizedBox(
+          width: _actionsColWidth,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: GrowboxTable.headerCell('Actions', isDark),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _tableHeader(String text, bool isDark) {
-    return Text(
-      text,
-      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary, letterSpacing: 0.5),
-    );
-  }
 
 
 
@@ -188,14 +158,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     // Mobile: Card layout
     if (isMobile) {
-      return InkWell(
-        onTap: () => context.go('/orders/${order.id}'),
-        child: Container(
-          padding: const EdgeInsets.all(AppDimensions.lg),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border, width: 0.5)),
-          ),
-          child: Column(
+      return GrowboxTable.row(
+        isDark: isDark,
+        mobile: true,
+        onTap: () => // Percent-encode: ids start with '#', which GoRouter would
+        // otherwise treat as a URL fragment and drop the path
+        // parameter (the row would never navigate).
+        context.go('/orders/${Uri.encodeComponent(order.id)}'),
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -204,36 +174,43 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(order.id, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+                        Text(order.id, style: GrowboxTable.strongStyle(isDark)),
                         const SizedBox(height: 2),
-                        Text(order.customerName, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                        Text(order.customerName, style: GrowboxTable.metaStyle(isDark)),
                       ],
                     ),
                   ),
-                  _statusBadge(order.status),
+                  GrowboxStatusPill(status: order.status.name),
                 ],
               ),
               const SizedBox(height: AppDimensions.sm),
-              Text(itemsText, style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(itemsText, style: GrowboxTable.secondaryStyle(isDark), maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: AppDimensions.sm),
               Row(
                 children: [
-                  Text(formatCurrency(order.totalAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                  Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
                   const Spacer(),
                   // Time — secondary text (same as the dashboard table) for contrast.
-                  Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                  Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
                 ],
               ),
               if (order.status == OrderStatus.pending) ...[
-                const SizedBox(height: AppDimensions.sm),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GrowboxButton(
-                        label: 'Accept',
-                        onPressed: () => _acceptOrder(context, order),
-                        icon: Icons.check_circle_outline,
+                const SizedBox(height: AppDimensions.sm),                  Row(
+                    children: [
+                      // Bulk-select tick — pending orders only.
+                      Checkbox(
+                        value: _selectedPending.contains(order.id),
+                        onChanged: (v) => _toggleSelected(order.id, v),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
                       ),
+                      const SizedBox(width: AppDimensions.sm),
+                      Expanded(
+                        child: GrowboxButton(
+                          label: 'Accept',
+                          onPressed: () => _acceptOrder(context, order),
+                          icon: Icons.check_circle_outline,
+                        ),
                     ),
                     const SizedBox(width: AppDimensions.sm),
                     // Ghost destructive: outlined red instead of solid fill.
@@ -250,19 +227,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ],
             ],
           ),
-        ),
       );
     }
 
     // Desktop: Table row
-    return InkWell(
-      onTap: () => context.go('/orders/${order.id}'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.md),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: (isDark ? AppColors.darkBorder : AppColors.border).withValues(alpha: 0.5), width: 0.5)),
-        ),
-        child: Row(
+    return GrowboxTable.row(
+      isDark: isDark,
+      onTap: () => // Percent-encode: ids start with '#', which GoRouter would
+        // otherwise treat as a URL fragment and drop the path
+        // parameter (the row would never navigate).
+        context.go('/orders/${Uri.encodeComponent(order.id)}'),
+      child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Order ID + Customer
@@ -272,32 +247,32 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(order.id, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+                  Text(order.id, style: GrowboxTable.strongStyle(isDark)),
                   const SizedBox(height: 2),
-                  Text(order.customerName, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                  Text(order.customerName, style: GrowboxTable.metaStyle(isDark)),
                 ],
               ),
             ),
             // Items
             Expanded(
               flex: 3,
-              child: Text(itemsText, style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(itemsText, style: GrowboxTable.secondaryStyle(isDark), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             // Amount
             Expanded(
               flex: 2,
-              child: Text(formatCurrency(order.totalAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+              child: Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
             ),
             // Status — fixed pill width shared with the header row.
             SizedBox(
               width: _statusColWidth,
-              child: Align(alignment: Alignment.centerLeft, child: _statusBadge(order.status)),
+              child: Align(alignment: Alignment.centerLeft, child: GrowboxStatusPill(status: order.status.name)),
             ),
             const SizedBox(width: AppDimensions.md),
             // Time — secondary text (same as the dashboard table) for contrast.
             SizedBox(
               width: _timeColWidth,
-              child: Text(_timeAgo(order.createdAt), style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+              child: Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
             ),
             // Actions — reserved on EVERY row so columns never shift; only
             // pending orders get buttons.
@@ -307,31 +282,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ? Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        // Accept stays the solid, primary action.
-                        GestureDetector(
+                        // Bulk-select tick — pending orders only.
+                        Checkbox(
+                          value: _selectedPending.contains(order.id),
+                          onChanged: (v) => _toggleSelected(order.id, v),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(width: 4),
+                        // Accept stays the solid, primary action — the same
+                        // shared table-action component the dashboard uses.
+                        GrowboxTableAction(
+                          label: 'Accept',
                           onTap: () => _acceptOrder(context, order),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                            ),
-                            child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
-                          ),
                         ),
                         const SizedBox(width: 6),
                         // Reject is a ghost/outlined action — less weight.
-                        GestureDetector(
+                        GrowboxTableAction(
+                          label: 'Reject',
+                          variant: GrowboxTableActionVariant.outline,
                           onTap: () => _rejectOrder(context, order),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.transparent,
-                              border: Border.all(color: AppColors.error, width: 1),
-                              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                            ),
-                            child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.error)),
-                          ),
                         ),
                       ],
                     )
@@ -339,27 +309,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
           ],
         ),
-      ),
     );
-  }
-
-  Widget _statusBadge(OrderStatus status) {
-    return switch (status) {
-      OrderStatus.pending => const GrowboxBadge(label: 'Pending', backgroundColor: AppColors.pendingLight, textColor: AppColors.pending, isSmall: true),
-      OrderStatus.accepted => const GrowboxBadge(label: 'Accepted', backgroundColor: AppColors.acceptedLight, textColor: AppColors.accepted, isSmall: true),
-      OrderStatus.preparing => const GrowboxBadge(label: 'Preparing', backgroundColor: AppColors.preparingLight, textColor: AppColors.preparing, isSmall: true),
-      OrderStatus.ready => const GrowboxBadge(label: 'Ready', backgroundColor: AppColors.readyLight, textColor: AppColors.ready, isSmall: true),
-      OrderStatus.completed => const GrowboxBadge(label: 'Completed', backgroundColor: AppColors.completedLight, textColor: AppColors.completed, isSmall: true),
-      OrderStatus.cancelled => const GrowboxBadge(label: 'Cancelled', backgroundColor: AppColors.cancelledLight, textColor: AppColors.cancelled, isSmall: true),
-    };
-  }
-
-  String _timeAgo(DateTime date) {
-    final diff = DateTime.now().difference(date);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
-    return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 
   Widget _buildEmptyState(BuildContext context, bool isDark, OrdersProvider provider) {
@@ -389,6 +339,64 @@ class _OrdersScreenState extends State<OrdersScreen> {
       if (success && context.mounted) {
         SnackbarHelper.showSuccess(context, 'Order ${order.id} accepted');
       }
+    }
+  }
+
+  void _toggleSelected(String orderId, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        _selectedPending.add(orderId);
+      } else {
+        _selectedPending.remove(orderId);
+      }
+    });
+  }
+
+  // The selection bar shown above the table while ticked orders exist.
+  Widget _buildBulkBar(BuildContext context, bool isDark) {
+    return GrowboxCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.lg,
+        vertical: AppDimensions.sm,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.checklist, size: 18, color: AppColors.primary),
+          const SizedBox(width: AppDimensions.sm),
+          Text(
+            '${_selectedPending.length} pending order${_selectedPending.length == 1 ? '' : 's'} selected',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+            ),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: () => setState(() => _selectedPending.clear()),
+            child: const Text('Clear'),
+          ),
+          const SizedBox(width: AppDimensions.sm),
+          GrowboxButton(
+            label: 'Accept selected (${_selectedPending.length})',
+            icon: Icons.check_circle_outline,
+            onPressed: () => _acceptSelected(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _acceptSelected(BuildContext context) async {
+    final provider = context.read<OrdersProvider>();
+    final count = await provider.acceptOrders(_selectedPending.toList());
+    if (!context.mounted) return;
+    setState(_selectedPending.clear);
+    if (count > 0) {
+      SnackbarHelper.showSuccess(
+          context, '$count order${count == 1 ? '' : 's'} accepted');
+    } else {
+      SnackbarHelper.showError(context, 'No pending orders in the selection');
     }
   }
 

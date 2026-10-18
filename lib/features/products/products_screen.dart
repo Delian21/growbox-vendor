@@ -11,6 +11,8 @@ import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_button.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
+import '../../shared/widgets/growbox_filter_chip.dart';
+import '../../shared/widgets/growbox_page_header.dart';
 import '../../shared/utils/snackbar_helper.dart';
 import '../../app/providers/products_provider.dart';
 import 'product_catalog.dart';
@@ -110,42 +112,34 @@ class _ProductsScreenState extends State<ProductsScreen> {
     // the header carries the action instead.
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
     final provider = context.watch<ProductsProvider>();
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // The top bar already names the page ("Products"); the big
-              // "My Products" heading repeated it, so the count line is
-              // now the header's only text.
-              // Same source as the "x of y products" line under the chips
-              // (the ProductCatalog count) — the two can never drift apart.
-              Text('${provider.products.length} products listed', style: TextStyle(fontSize: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
-            ],
-          ),
-        ),
-        if (!isMobile) ...[
-          const SizedBox(width: AppDimensions.lg),
-          // The old floating Add Product, now parked beside the view toggle
-          // where it can't cover a product card.
-          GrowboxButton(
-            label: 'Add Product',
-            icon: Icons.add,
-            onPressed: () => _showAddProductSheet(context),
+    // The top bar already names the page ("Products"); the shared header
+    // carries the count line only — plus the page's actions on the right.
+    return GrowboxPageHeader(
+      subtitle: '${provider.products.length} products listed',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isMobile) ...[
+            // The old floating Add Product, now parked beside the view toggle
+            // where it can't cover a product card.
+            GrowboxButton(
+              label: 'Add Product',
+              icon: Icons.add,
+              onPressed: () => _showAddProductSheet(context),
+            ),
+            const SizedBox(width: AppDimensions.md),
+          ],
+          Container(
+            decoration: BoxDecoration(color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant, borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
+            child: Row(
+              children: [
+                _viewToggle(Icons.grid_view_rounded, _isGridView, isDark, () => setState(() => _isGridView = true)),
+                _viewToggle(Icons.view_list_rounded, !_isGridView, isDark, () => setState(() => _isGridView = false)),
+              ],
+            ),
           ),
         ],
-        const SizedBox(width: AppDimensions.md),
-        Container(
-          decoration: BoxDecoration(color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant, borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
-          child: Row(
-            children: [
-              _viewToggle(Icons.grid_view_rounded, _isGridView, isDark, () => setState(() => _isGridView = true)),
-              _viewToggle(Icons.view_list_rounded, !_isGridView, isDark, () => setState(() => _isGridView = false)),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -210,7 +204,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     Widget chipAt(int index) {
       final isSelected = _selectedFilter == filters[index];
       final categoryColor = CategoryColors.forCategory(filters[index]);
-      return FilterChip(
+      return GrowboxFilterChip(
         avatar: categoryColor == null
             ? null
             : Container(
@@ -221,25 +215,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   shape: BoxShape.circle,
                 ),
               ),
-        label: Text(filters[index]),
+        label: filters[index],
         selected: isSelected,
         onSelected: (_) => _onFilterChanged(filters[index]),
-        selectedColor: AppColors.primary,
-        checkmarkColor: Colors.white,
-        labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isSelected ? Colors.white : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
-        backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-        // 1px outline on unselected chips so they read as tappable on the
-        // off-white light background; selected chips fill, so no border.
-        side: BorderSide(
-          color: isSelected
-              ? Colors.transparent
-              : (isDark ? AppColors.darkBorder : AppColors.border),
-          width: 1,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusFull)),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
       );
     }
 
@@ -926,7 +904,7 @@ class _AddProductSheetState extends State<_AddProductSheet> {
           runSpacing: 8,
           children: _allCategories.map((cat) {
             final selected = _selectedCategories.contains(cat);
-            return FilterChip(
+            return GrowboxFilterChip(
               avatar: Container(
                 width: 10,
                 height: 10,
@@ -935,16 +913,12 @@ class _AddProductSheetState extends State<_AddProductSheet> {
                   shape: BoxShape.circle,
                 ),
               ),
-              label: Text(cat, style: TextStyle(fontSize: 13, color: selected ? Colors.white : (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary))),
+              label: cat,
               selected: selected,
-              selectedColor: AppColors.primary,
-              backgroundColor: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-              checkmarkColor: Colors.white,
-              side: BorderSide(
-                color: _showCategoryError && _selectedCategories.isEmpty
-                    ? Theme.of(context).colorScheme.error.withValues(alpha: 0.5)
-                    : selected ? AppColors.primary : (isDark ? AppColors.darkBorder : AppColors.border),
-              ),
+              // Validation error keeps its red outline on unselected chips.
+              borderColor: _showCategoryError && _selectedCategories.isEmpty
+                  ? Theme.of(context).colorScheme.error.withValues(alpha: 0.5)
+                  : null,
               onSelected: (val) {
                 setState(() {
                   if (val) {

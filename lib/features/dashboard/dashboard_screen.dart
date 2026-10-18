@@ -10,12 +10,18 @@ import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/category_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../app/providers/orders_provider.dart';
+import '../../app/providers/products_provider.dart';
 import '../../app/providers/sales_provider.dart';
 import '../../app/providers/store_provider.dart';
 import '../../data/models/order.dart';
+import '../../data/models/sales_data.dart';
 import '../../shared/utils/snackbar_helper.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/widgets/growbox_card.dart';
+import '../../shared/widgets/growbox_page_header.dart';
+import '../../shared/widgets/growbox_status_pill.dart';
+import '../../shared/widgets/growbox_table.dart';
+import '../../shared/widgets/growbox_table_action.dart';
 import '../../shared/widgets/shimmer_loader.dart';
 
 enum _DateRange { all, week, twoWeeks, month }
@@ -55,75 +61,40 @@ class _DashboardScreenState extends State<DashboardScreen>
     duration: const Duration(milliseconds: 280),
   );
 
-  // Recent-order rows held as STATE: the inline Accept action flips
-  // pending → accepted on the very instance the widget tree renders, so
-  // the list must outlive a rebuild — re-creating these literals inside
-  // build() would silently discard the change on the next frame.
-  final List<_OrderItem> _recentOrders = [
-    _OrderItem(id: '#ORD-001', customer: 'Chidi Okonkwo', items: 'Fresh Tomatoes (5), Onions (2)', amount: formatCurrency(14900), status: 'pending', time: '2 min ago'),
-    _OrderItem(id: '#ORD-002', customer: 'Amina Bello', items: 'Bell Peppers (3)', amount: formatCurrency(9600), status: 'preparing', time: '15 min ago'),
-    _OrderItem(id: '#ORD-003', customer: 'Emeka Nwosu', items: 'Organic Lettuce (2)', amount: formatCurrency(3000), status: 'ready', time: '32 min ago'),
-    _OrderItem(id: '#ORD-004', customer: 'Fatima Abdullahi', items: 'Sweet Potatoes (10)', amount: formatCurrency(18000), status: 'completed', time: '1 hour ago'),
-    _OrderItem(id: '#ORD-005', customer: 'Bola Adeyemi', items: 'Carrots (4), Onions (3)', amount: formatCurrency(10800), status: 'cancelled', time: '2 hours ago'),
-  ];
-
   @override
   void dispose() {
     _ringFocus.dispose();
     super.dispose();
   }
 
-  // ── MOCK CHART DATA ──
-  static const _salesOverviewData = [
-    _ChartData(day: 'May 1', amount: 28000, orders: 12),
-    _ChartData(day: 'May 2', amount: 30000, orders: 14),
-    _ChartData(day: 'May 3', amount: 35000, orders: 16),
-    _ChartData(day: 'May 4', amount: 33000, orders: 15),
-    _ChartData(day: 'May 5', amount: 32000, orders: 14),
-    _ChartData(day: 'May 6', amount: 38000, orders: 17),
-    _ChartData(day: 'May 7', amount: 45000, orders: 20),
-    _ChartData(day: 'May 8', amount: 42000, orders: 19),
-    _ChartData(day: 'May 9', amount: 38000, orders: 17),
-    _ChartData(day: 'May 10', amount: 44000, orders: 20),
-    _ChartData(day: 'May 11', amount: 52000, orders: 23),
-    _ChartData(day: 'May 12', amount: 50000, orders: 22),
-    _ChartData(day: 'May 13', amount: 48000, orders: 21),
-    _ChartData(day: 'May 14', amount: 54000, orders: 24),
-    _ChartData(day: 'May 15', amount: 61000, orders: 27),
-    _ChartData(day: 'May 16', amount: 58000, orders: 26),
-    _ChartData(day: 'May 17', amount: 55000, orders: 24),
-    _ChartData(day: 'May 18', amount: 63000, orders: 28),
-    _ChartData(day: 'May 19', amount: 72000, orders: 32),
-    _ChartData(day: 'May 20', amount: 70000, orders: 31),
-    _ChartData(day: 'May 21', amount: 68000, orders: 30),
-    _ChartData(day: 'May 22', amount: 75000, orders: 33),
-    _ChartData(day: 'May 23', amount: 85000, orders: 37),
-    _ChartData(day: 'May 24', amount: 82000, orders: 36),
-    _ChartData(day: 'May 25', amount: 79000, orders: 35),
-    _ChartData(day: 'May 26', amount: 86000, orders: 38),
-    _ChartData(day: 'May 27', amount: 95000, orders: 42),
-    _ChartData(day: 'May 28', amount: 92000, orders: 41),
-    _ChartData(day: 'May 29', amount: 88000, orders: 39),
-    _ChartData(day: 'May 30', amount: 96000, orders: 43),
-    _ChartData(day: 'May 31', amount: 104000, orders: 46),
-  ];
+  // ── DERIVED DATA ──
+  // Every number on this page comes from OrdersProvider (through
+  // SalesProvider): the same orders the Sales and Orders pages render, so
+  // the three pages can never disagree.
 
-  List<_ChartData> get _filteredSalesData {
-    if (_selectedRange == _DateRange.all || _selectedRange == _DateRange.month) {
-      return _salesOverviewData;
-    }
-    // Parse the last date from the dataset (e.g. "May 31" -> 31)
-    final lastDay = int.tryParse(_salesOverviewData.last.day.split(' ').last) ?? 31;
-    final daysBack = switch (_selectedRange) {
+  /// Sales Overview series for the selected range. 'All' and '30 Days'
+  /// both show the full 30-day window — the demo data never spans more.
+  List<DailyPoint> _overviewSeries(SalesProvider sales) {
+    final days = switch (_selectedRange) {
       _DateRange.week => 7,
       _DateRange.twoWeeks => 14,
       _ => 30,
     };
-    final cutoffDay = lastDay - daysBack;
-    return _salesOverviewData.where((d) {
-      final day = int.tryParse(d.day.split(' ').last) ?? 0;
-      return day > cutoffDay;
-    }).toList();
+    return sales.dailySeries(days);
+  }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _dayLabel(DateTime day) => '${day.day} ${_months[day.month - 1]}';
+
+  /// Newest-first slice of the live orders for the Recent Orders table.
+  List<Order> _recentOrdersOf(OrdersProvider orders) {
+    final sorted = [...orders.allOrders]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return sorted.take(5).toList();
   }
 
   // Shares its palette with the products filter chips via CategoryColors —
@@ -149,23 +120,38 @@ class _DashboardScreenState extends State<DashboardScreen>
   // line would overflow, so the stacked tablet widths skip it.
   static const _summaryMinInner = 300.0;
 
-  static final _categoryData = _aggregateSmallCategories([
-    for (final e in const {
-      'Vegetables': 30,
-      'Fruits': 20,
-      'Grains & Cereals': 13,
-      'Legumes & Pulses': 10,
-      'Tuber & Roots': 8,
-      'Oils': 8,
-      'Fresh Proteins': 6,
-      'Others': 5,
-    }.entries)
-      _CategoryData(
-        label: e.key,
-        percentage: e.value,
-        color: CategoryColors.forCategory(e.key)!,
-      ),
-  ]);
+  // Ring segments — refreshed on EVERY build from SalesProvider's
+  // completed-revenue shares (assigned in build(); the gesture handlers
+  // read the latest snapshot). A selection whose slice disappeared is
+  // dropped in build() before any handler can dereference it.
+  List<_CategoryData> _categoryData = const [];
+
+  /// Completed-revenue shares → ring segments whose percentages sum to
+  /// exactly 100 (floor each share, hand the leftover points to the
+  /// largest fractional parts — the ring must close with no overlap).
+  static List<_CategoryData> _deriveCategories(List<CategoryShare> shares) {
+    if (shares.isEmpty) return const [];
+    final total = shares.fold<double>(0, (sum, s) => sum + s.amount);
+    if (total <= 0) return const [];
+    final exact = [for (final s in shares) s.amount / total * 100];
+    final percents = [for (final e in exact) e.floor()];
+    final remainder = 100 - percents.fold<int>(0, (sum, p) => sum + p);
+    final byFraction = [for (var i = 0; i < exact.length; i++) i]
+      ..sort((a, b) =>
+          (exact[b] - percents[b]).compareTo(exact[a] - percents[a]));
+    for (var i = 0; i < remainder; i++) {
+      percents[byFraction[i % byFraction.length]]++;
+    }
+    return _aggregateSmallCategories([
+      for (var i = 0; i < shares.length; i++)
+        _CategoryData(
+          label: shares[i].category,
+          percentage: percents[i],
+          color: CategoryColors.forCategory(shares[i].category) ??
+              CategoryColors.others,
+        ),
+    ]);
+  }
 
   // Folds every non-"Others" category under the cutoff into one slice
   // (data unchanged — same percentages, just re-bucketed for display).
@@ -190,6 +176,15 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Refresh the ring's segments from the live completed orders; drop a
+    // selection whose slice no longer exists (data changed under it).
+    _categoryData = _deriveCategories(context.watch<SalesProvider>().categoryShares);
+    if (_selectedCategory != null &&
+        _selectedCategory! >= _categoryData.length) {
+      _selectedCategory = null;
+      _prevCategory = null;
+    }
 
     return RefreshIndicator(
       onRefresh: _handleRefresh,
@@ -243,51 +238,55 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // ── SUBTITLE HEADER — status line above the stats (welcome title removed) ──
   Widget _buildSubtitleHeader(BuildContext context, bool isDark) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            "Here's what's happening with your store today",
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-            ),
-          ),
-        ),
-        // Store status — real StoreProvider state and a working toggle,
-        // with an explicit "Store:" prefix so it can't be read as a
-        // connection or session indicator.
-        InkWell(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-          onTap: () => context.read<StoreProvider>().toggleStoreStatus(),
-          child: Builder(builder: (context) {
-            final isOpen = context.watch<StoreProvider>().isOpen;
-            return GrowboxBadge(
-              label: isOpen ? 'Store: Online' : 'Store: Offline',
-              backgroundColor: isOpen
-                  ? AppColors.successLight
-                  : AppColors.errorLight,
-              textColor: isOpen ? AppColors.success : AppColors.error,
-            );
-          }),
-        ),
-      ],
+    // Top bar already names the page ("Dashboard"); the shared header
+    // carries the status line, with the store toggle as its trailing slot.
+    // Store status — real StoreProvider state and a working toggle,
+    // with an explicit "Store:" prefix so it can't be read as a
+    // connection or session indicator.
+    return GrowboxPageHeader(
+      subtitle: "Here's what's happening with your store today",
+      trailing: InkWell(
+        borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+        onTap: () => context.read<StoreProvider>().toggleStoreStatus(),
+        child: Builder(builder: (context) {
+          final isOpen = context.watch<StoreProvider>().isOpen;
+          return GrowboxBadge(
+            label: isOpen ? 'Store: Online' : 'Store: Offline',
+            backgroundColor: isOpen
+                ? AppColors.successLight
+                : AppColors.errorLight,
+            textColor: isOpen ? AppColors.success : AppColors.error,
+          );
+        }),
+      ),
     );
   }
 
   // ── STATS — 1 primary metric, 3 secondary ──
   Widget _buildStatsGrid(BuildContext context, bool isDark) {
+    final sales = context.watch<SalesProvider>();
+    final ordersProvider = context.watch<OrdersProvider>();
+    final productsCount = context.watch<ProductsProvider>().products.length;
+    // All-time completed revenue — the same total the Sales page's 'All'
+    // filter shows (fixed period: the Sales page's chip must not leak
+    // into the dashboard).
+    final summary = sales.allTimeSummary;
+    // Month-over-month revenue trend from the same completed records.
+    final delta = sales.revenueDelta('month');
     final primary = _StatCard(
       title: 'Total Revenue',
-      value: formatCurrency(2450000),
-      change: '+12.5%',
-      changeNote: 'from last month',
+      value: formatCurrency(summary.totalSales),
+      change: (delta == null || delta == 0)
+          ? null
+          : '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)}%',
+      changeNote: 'vs last month',
     );
-    // Every trend pill names its period — "+3" over what?
-    const secondary = [
-      _StatCard(title: 'Orders', value: '156', change: '+8.2%', changeNote: 'this month'),
-      _StatCard(title: 'Products', value: '42', change: '+3', changeNote: 'this month'),
+    // Every trend pill names its period — "+3" over what? Counts with no
+    // honest comparison source (product/rating history) carry none.
+    final secondary = [
+      _StatCard(title: 'Orders', value: '${ordersProvider.totalCount}'),
+      _StatCard(title: 'Products', value: '$productsCount'),
+      // Rating has no order-data source — the one kept display metric.
       _StatCard(title: 'Rating', value: '4.8', change: '+0.2', changeNote: 'this month'),
     ];
 
@@ -357,16 +356,18 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Primary metric — the one thing the eye should land on.
   // A quiet sparkline sits beside the number, showing the trend's shape
-  // instead of a coloured badge.
+  // instead of a coloured badge. Shape = the last 7 days of the SAME
+  // completed-revenue series the Sales Overview chart plots.
   Widget _buildPrimaryStatCard(BuildContext context, _StatCard stat, bool isDark) {
-    final sparkWindow = _salesOverviewData.length > 7
-        ? _salesOverviewData.sublist(_salesOverviewData.length - 7)
-        : _salesOverviewData;
+    final spark = context.watch<SalesProvider>().dailySeries(7);
     final spots = [
-      for (var i = 0; i < sparkWindow.length; i++) FlSpot(i.toDouble(), sparkWindow[i].amount),
+      for (var i = 0; i < spark.length; i++)
+        FlSpot(i.toDouble(), spark[i].revenue),
     ];
     final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
     final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    // All-zero week: keep a unit band so fl_chart never divides by zero.
+    final top = maxY == 0 ? 1.0 : maxY;
 
     return GrowboxCard(
       padding: const EdgeInsets.all(20),
@@ -409,7 +410,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: LineChart(
                   LineChartData(
                     minY: minY * 0.96,
-                    maxY: maxY * 1.04,
+                    maxY: top * 1.04,
                     lineTouchData: LineTouchData(enabled: false),
                     gridData: const FlGridData(show: false),
                     titlesData: const FlTitlesData(show: false),
@@ -440,21 +441,30 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   // Green delta pill — trend arrow + change, optionally with a qualifier
-  // ("from last month").
+  // ("vs last month"). Derived data can trend DOWN, so a negative delta
+  // flips to the red down-arrow treatment instead of lying green.
   Widget _changeBadge(String change, bool isDark, {String? note, bool isSmall = false}) {
-    final color = isDark ? AppColors.darkPrimary : AppColors.success;
+    final isDown = change.startsWith('-');
+    final color = isDown
+        ? AppColors.error
+        : (isDark ? AppColors.darkPrimary : AppColors.success);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: isSmall ? 6 : 8, vertical: 3),
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.success.withValues(alpha: 0.15)
-            : AppColors.successLight,
+        color: isDown
+            ? (isDark
+                ? AppColors.error.withValues(alpha: 0.15)
+                : AppColors.errorLight)
+            : isDark
+                ? AppColors.success.withValues(alpha: 0.15)
+                : AppColors.successLight,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.trending_up, size: isSmall ? 10 : 12, color: color),
+          Icon(isDown ? Icons.trending_down : Icons.trending_up,
+              size: isSmall ? 10 : 12, color: color),
           const SizedBox(width: 3),
           Text(
             note == null ? change : '$change $note',
@@ -631,17 +641,21 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // ── SALES OVERVIEW LINE CHART (dual-line) ──
   Widget _buildSalesOverviewChart(BuildContext context, bool isDark, {bool isNarrow = false}) {
-    final filteredData = _filteredSalesData;
-    final maxSales = filteredData.map((d) => d.amount).reduce((a, b) => a > b ? a : b);
-    final maxOrders = filteredData.map((d) => d.orders).reduce((a, b) => a > b ? a : b);
+    // Same completed-revenue records as the Sales page and the stats card,
+    // bucketed per day by SalesProvider — the three can never disagree.
+    final filteredData = _overviewSeries(context.watch<SalesProvider>());
+    final maxSales = filteredData.fold<double>(0, (m, d) => d.revenue > m ? d.revenue : m);
+    final maxOrders = filteredData.fold<int>(0, (m, d) => d.orders > m ? d.orders : m);
 
     // "Nice" axis top: a 10k-rounded step ≈ top/3, then round the top up to
-    // it — the sales axis lands on clean ticks (₦40k/₦80k/₦120k for this
-    // data) instead of fl_chart's uneven auto intervals.
+    // it — the sales axis lands on clean ticks instead of fl_chart's
+    // uneven auto intervals. All-zero window (no completed orders yet):
+    // fall back to a single step so the chart still renders.
     final axisTop = maxSales * 1.15;
     final axisSteps = (axisTop / 3 / 10000).ceil();
     final axisStep = (axisSteps < 1 ? 1 : axisSteps) * 10000.0;
-    final axisMaxY = (axisTop / axisStep).ceil() * axisStep;
+    final axisMaxY =
+        ((axisTop / axisStep).ceil() * axisStep).clamp(axisStep, double.infinity);
 
     // Orders get their OWN axis (counts): a 10-based step ≈ top/3 so the
     // right-hand labels are clean numbers (20/40/60 for this data) sitting
@@ -738,7 +752,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              filteredData[index].day,
+                              _dayLabel(filteredData[index].day),
                               style: TextStyle(
                                 fontSize: 10,
                                 // Secondary, not tertiary: tertiary fails
@@ -808,7 +822,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   // ── Sales line (green, solid, area fill) ──
                   LineChartBarData(
                     spots: filteredData.asMap().entries.map((entry) {
-                      return FlSpot(entry.key.toDouble(), entry.value.amount.toDouble());
+                      return FlSpot(entry.key.toDouble(), entry.value.revenue);
                     }).toList(),
                     isCurved: true,
                     color: AppColors.primary,
@@ -834,8 +848,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                     spots: filteredData.asMap().entries.map((entry) {
                       // Plot counts on the ORDERS scale (axisOrdersMax at the
                       // plot top), so the right-hand labels read true values.
-                      final scaledOrders =
-                          (entry.value.orders / axisOrdersMax) * axisMaxY;
+                      final scaledOrders = axisOrdersMax == 0
+                          ? 0.0
+                          : (entry.value.orders / axisOrdersMax) * axisMaxY;
                       return FlSpot(entry.key.toDouble(), scaledOrders);
                     }).toList(),
                     isCurved: true,
@@ -1050,7 +1065,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       {required bool legendBeside,
       double ringSize = 220,
       bool showSummary = false}) {
-    final summary = context.watch<SalesProvider>().summary;
+    // All-time totals: the ring's shares are all-time, and the Sales
+    // page's period chip must never shift the dashboard's center KPI.
+    final summary = context.watch<SalesProvider>().allTimeSummary;
     return GrowboxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1262,9 +1279,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   // it on real information instead of air. Shown only when the card is wide
   // enough for its content (see _summaryMinInner).
   Widget _buildTopCategoryLine(bool isDark, double totalSales) {
-    final top = _categoryData
-        .where((c) => c.label != 'Others')
-        .reduce((a, b) => a.percentage >= b.percentage ? a : b);
+    // Derived data may leave only "Others" (or nothing) — the summary
+    // line needs a real named category to be worth its space.
+    final named = _categoryData.where((c) => c.label != 'Others').toList();
+    if (named.isEmpty) return const SizedBox.shrink();
+    final top = named.reduce((a, b) => a.percentage >= b.percentage ? a : b);
     return Container(
       padding: const EdgeInsets.only(top: AppDimensions.md),
       decoration: BoxDecoration(
@@ -1328,6 +1347,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ── RECENT ORDERS ──
   Widget _buildRecentOrdersSection(BuildContext context, bool isDark) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
+    // Live orders — newest first — from the SAME provider the Orders page
+    // renders, so an Accept here moves the same order both pages show.
+    final recent = _recentOrdersOf(context.watch<OrdersProvider>());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1345,56 +1367,79 @@ class _DashboardScreenState extends State<DashboardScreen>
         const SizedBox(height: AppDimensions.sm),
         GrowboxCard(
           padding: EdgeInsets.zero,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!isMobile) ...[
-                _buildOrdersTableHeader(isDark),
-                Divider(height: 1, color: isDark ? AppColors.darkBorder : AppColors.border),
-              ],
-              ..._recentOrders.map((order) => _buildOrderRow(context, order, isDark)),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Time is dropped only when its slice of the row can't hold
+              // "2 hours ago" on one line; the fixed-width Actions slot
+              // survives at every width.
+              final showTime = constraints.maxWidth >= _timeColumnMinWidth;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!isMobile) ...[
+                    _buildOrdersTableHeader(isDark, showTime: showTime),
+                    GrowboxTable.headerDivider(isDark),
+                  ],
+                  ...recent.map((order) =>
+                      _buildOrderRow(context, order, isDark, showTime: showTime)),
+                ],
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  Widget _buildOrdersTableHeader(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.md),
-      child: Row(
-        children: [
-          Expanded(flex: 2, child: _tableHeader('Order', isDark)),
-          Expanded(flex: 3, child: _tableHeader('Items', isDark)),
-          Expanded(flex: 2, child: _tableHeader('Amount', isDark)),
-          Expanded(flex: 2, child: _tableHeader('Status', isDark)),
-          Expanded(flex: 1, child: _tableHeader('Time', isDark)),
-        ],
-      ),
+  // ── Recent Orders column geometry, shared by the header and EVERY row ──
+  // Actions is a fixed-width, right-aligned slot: the button never gets
+  // squeezed by the flexible columns, and rows without an action leave it
+  // empty so Order/Items/Amount/Status/Time keep their x offsets. Time is
+  // the first column to go when the card gets tight — below
+  // _timeColumnMinWidth its flex slice would wrap "2 hours ago" onto two
+  // lines, while the action must never shrink into a mini-pill.
+  static const double _actionsColWidth = 96;
+  static const double _timeColumnMinWidth = 800;
+
+  Widget _buildOrdersTableHeader(bool isDark, {required bool showTime}) {
+    return GrowboxTable.headerRow(
+      children: [
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Order', isDark)),
+        Expanded(flex: 3, child: GrowboxTable.headerCell('Items', isDark)),
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Amount', isDark)),
+        Expanded(flex: 2, child: GrowboxTable.headerCell('Status', isDark)),
+        if (showTime)
+          Expanded(flex: 1, child: GrowboxTable.headerCell('Time', isDark)),
+        // Right-aligned heading over the reserved action slot — mirrors the
+        // Orders table's Actions column.
+        SizedBox(
+          width: _actionsColWidth,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: GrowboxTable.headerCell('Actions', isDark),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _tableHeader(String text, bool isDark) {
-    return Text(
-      text,
-      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextTertiary : AppColors.textTertiary, letterSpacing: 0.5),
-    );
-  }
-
-  Widget _buildOrderRow(BuildContext context, _OrderItem order, bool isDark) {
+  Widget _buildOrderRow(BuildContext context, Order order, bool isDark,
+      {required bool showTime}) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
+    final itemsText =
+        order.items.map((i) => '${i.productName} (${i.quantity})').join(', ');
 
     // Mobile: Card layout
     if (isMobile) {
-      return InkWell(
-        onTap: () => context.go('/orders'),
-        child: Container(
-          padding: const EdgeInsets.all(AppDimensions.lg),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border, width: 0.5)),
-          ),
-          child: Column(
+      return GrowboxTable.row(
+        isDark: isDark,
+        mobile: true,
+        // Percent-encode: ids start with '#', which GoRouter would
+        // otherwise treat as a URL fragment and drop the path parameter
+        // (the row would never navigate).
+        onTap: () =>
+            context.go('/orders/${Uri.encodeComponent(order.id)}'),
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -1403,49 +1448,52 @@ class _DashboardScreenState extends State<DashboardScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(order.id, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+                        Text(order.id, style: GrowboxTable.strongStyle(isDark)),
                         const SizedBox(height: 2),
-                        Text(order.customer, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                        Text(order.customerName, style: GrowboxTable.metaStyle(isDark)),
                       ],
                     ),
                   ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildStatusBadge(order.status),
-                      if (order.status == 'pending') ...[
+                      GrowboxStatusPill(status: order.status.name),
+                      if (order.status == OrderStatus.pending) ...[
                         const SizedBox(width: 8),
-                        _acceptOrderButton(order),
+                        // Same shared action as the desktop table — solid
+                        // green, never a pale twin of the pill beside it.
+                        GrowboxTableAction(
+                          label: 'Accept',
+                          onTap: () => _acceptOrder(context, order),
+                        ),
                       ],
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: AppDimensions.sm),
-              Text(order.items, style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(itemsText, style: GrowboxTable.secondaryStyle(isDark), maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: AppDimensions.sm),
               Row(
                 children: [
-                  Text(order.amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+                  Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
                   const Spacer(),
-                  Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                  Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
                 ],
               ),
             ],
           ),
-        ),
       );
     }
 
     // Desktop: Table row
-    return InkWell(
-      onTap: () => context.go('/orders'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppDimensions.lg, vertical: AppDimensions.md),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border, width: 0.5)),
-        ),
-        child: Row(
+    return GrowboxTable.row(
+      isDark: isDark,
+      // Percent-encode: ids start with '#', which GoRouter would
+      // otherwise treat as a URL fragment and drop the path parameter
+      // (the row would never navigate).
+      onTap: () => context.go('/orders/${Uri.encodeComponent(order.id)}'),
+      child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
@@ -1454,73 +1502,62 @@ class _DashboardScreenState extends State<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(order.id, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
-                  Text(order.customer, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+                  Text(order.id, style: GrowboxTable.strongStyle(isDark)),
+                  Text(order.customerName, style: GrowboxTable.metaStyle(isDark)),
                 ],
               ),
             ),
             Expanded(
               flex: 3,
-              child: Text(order.items, style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(itemsText, style: GrowboxTable.secondaryStyle(isDark), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             Expanded(
               flex: 2,
-              child: Text(order.amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary)),
+              child: Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
             ),
+            // Status cell holds the pill — nothing else.
             Expanded(
               flex: 2,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildStatusBadge(order.status),
-                    if (order.status == 'pending') ...[
-                      const SizedBox(width: 8),
-                      _acceptOrderButton(order),
-                    ],
-                  ],
-                ),
+                child: GrowboxStatusPill(status: order.status.name),
               ),
             ),
-            Expanded(
-              flex: 1,
-              child: Text(order.time, style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary)),
+            if (showTime)
+              Expanded(
+                flex: 1,
+                child: Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
+              ),
+            // Reserved actions slot — empty on rows without an action, so
+            // every other column stays perfectly aligned.
+            SizedBox(
+              width: _actionsColWidth,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: order.status == OrderStatus.pending
+                    ? GrowboxTableAction(
+                        label: 'Accept',
+                        onTap: () => _acceptOrder(context, order),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ),
           ],
         ),
-      ),
     );
   }
 
-  // Inline accept for pending rows — same terminal state as the Orders
-  // screen's accept flow (status → Accepted), without leaving the dashboard.
-  Widget _acceptOrderButton(_OrderItem order) {
-    return TextButton(
-      onPressed: () => setState(() => order.status = 'accepted'),
-      style: TextButton.styleFrom(
-        backgroundColor: AppColors.successLight,
-        foregroundColor: AppColors.success,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-        minimumSize: Size.zero,
-        visualDensity: VisualDensity.compact,
-        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      ),
-      child: const Text('Accept'),
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    return switch (status) {
-      'pending' => const GrowboxBadge(label: 'Pending', backgroundColor: AppColors.pendingLight, textColor: AppColors.pending, isSmall: true),
-      'preparing' => const GrowboxBadge(label: 'Preparing', backgroundColor: AppColors.preparingLight, textColor: AppColors.preparing, isSmall: true),
-      // Same tokens as the Orders screen's Accepted badge.
-      'accepted' => const GrowboxBadge(label: 'Accepted', backgroundColor: AppColors.acceptedLight, textColor: AppColors.accepted, isSmall: true),
-      'ready' => const GrowboxBadge(label: 'Ready', backgroundColor: AppColors.readyLight, textColor: AppColors.ready, isSmall: true),
-      'completed' => const GrowboxBadge(label: 'Completed', backgroundColor: AppColors.completedLight, textColor: AppColors.completed, isSmall: true),
-      'cancelled' => const GrowboxBadge(label: 'Cancelled', backgroundColor: AppColors.cancelledLight, textColor: AppColors.cancelled, isSmall: true),
-      _ => const SizedBox.shrink(),
-    };
+  // Inline accept — a REAL write through the shared OrdersProvider, so the
+  // Orders page, its chip counts and the Sales numbers all see it. No
+  // confirmation dialog here: this is the dashboard's one-tap quick
+  // action (the Orders page keeps its deliberate Accept flow).
+  Future<void> _acceptOrder(BuildContext context, Order order) async {
+    final ok = await context
+        .read<OrdersProvider>()
+        .updateOrderStatus(order.id, OrderStatus.accepted);
+    if (ok && context.mounted) {
+      SnackbarHelper.showSuccess(context, 'Order ${order.id} accepted');
+    }
   }
 
   // Quick action: flip the oldest pending order to Ready and confirm —
@@ -1715,14 +1752,6 @@ class _ArcGaugePainter extends CustomPainter {
       old.valueColor != valueColor;
 }
 
-class _OrderItem {
-  final String id, customer, items, amount, time;
-
-  // Mutable: the inline Accept action promotes pending → accepted in place.
-  String status;
-  _OrderItem({required this.id, required this.customer, required this.items, required this.amount, required this.status, required this.time});
-}
-
 class _QuickAction {
   final IconData icon;
   final String label;
@@ -1731,13 +1760,6 @@ class _QuickAction {
   final String? route;
   final VoidCallback? run;
   _QuickAction({required this.icon, required this.label, this.route, this.run});
-}
-
-class _ChartData {
-  final String day;
-  final double amount;
-  final int orders;
-  const _ChartData({required this.day, required this.amount, this.orders = 0});
 }
 
 class _CategoryData {
