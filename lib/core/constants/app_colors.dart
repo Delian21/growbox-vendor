@@ -67,6 +67,17 @@ class AppColors {
   static const Color cancelled = Color(0xFFDC2626);
   static const Color cancelledLight = Color(0xFFFEE2E2);
 
+  // ── Order Status on dark — contrast-raised text for dark-theme pills ──
+  // Same hues as the status colours above, lifted so 11px bold text clears
+  // AA against a 16%-alpha status tint on the dark surface, and the
+  // blue/violet/cyan trio (Accepted / Preparing / Ready) stays distinct.
+  static const Color pendingOnDark = Color(0xFFFBBF24);
+  static const Color acceptedOnDark = Color(0xFF60A5FA);
+  static const Color preparingOnDark = Color(0xFFA78BFA);
+  static const Color readyOnDark = Color(0xFF22D3EE);
+  static const Color completedOnDark = Color(0xFF4ADE80);
+  static const Color cancelledOnDark = Color(0xFFF87171);
+
   // ── Chart Colors ──
   static const Color chartGreen = Color(0xFF1A7F50);
   static const Color chartGreenLight = Color(0xFF6DD5A0);
