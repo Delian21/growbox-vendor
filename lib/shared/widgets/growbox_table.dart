@@ -61,7 +61,19 @@ class GrowboxTable {
       ),
       child: child,
     );
-    return onTap == null ? wrapped : InkWell(onTap: onTap, child: wrapped);
+    return onTap == null
+        ? wrapped
+        : InkWell(
+            onTap: onTap,
+            // Pin the hover tint so rows read as clickable in BOTH themes:
+            // ThemeData's default hover colour can be invisible against
+            // the dark card surface, while the shared tinted surface
+            // tokens are visible on light and dark alike.
+            hoverColor: isDark
+                ? AppColors.darkSurfaceVariant
+                : AppColors.surfaceVariant,
+            child: wrapped,
+          );
   }
 
   // ── Cell contrast ladder ──

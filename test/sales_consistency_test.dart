@@ -12,6 +12,7 @@ import 'package:growbox_vendor/core/constants/app_colors.dart';
 import 'package:growbox_vendor/data/models/order.dart';
 import 'package:growbox_vendor/features/orders/order_details_screen.dart';
 import 'package:growbox_vendor/features/sales/sales_screen.dart';
+import 'package:growbox_vendor/shared/widgets/growbox_table_action.dart';
 
 import 'load_roboto.dart';
 
@@ -279,5 +280,67 @@ void main() {
     final link = tester.widget<Text>(find.text('#ORD-004'));
     expect(link.style?.color, AppColors.darkPrimary,
         reason: 'dark mode links use the dark primary token');
+  });
+
+  testWidgets('desktop light: right-aligned Actions column with a View per row',
+      (tester) async {
+    await pumpSales(
+      tester,
+      themeModeIndex: 1,
+      size: const Size(1440, 900),
+    );
+
+    final sales =
+        tester.element(find.byType(SalesScreen)).read<SalesProvider>();
+
+    // The trailing column exists with its heading, like Dashboard/Orders.
+    expect(find.text('Actions'), findsOneWidget);
+    final views = tester.widgetList<GrowboxTableAction>(
+      find.byType(GrowboxTableAction),
+    );
+    expect(views, hasLength(sales.transactions.length),
+        reason: 'every transaction row reserves the Actions cell');
+
+    // Heading is right-aligned above the button — component rect to
+    // component rect, so the button's own 10px padding can't skew it.
+    final headerRight = tester.getRect(find.text('Actions')).right;
+    final buttonRight =
+        tester.getRect(find.byType(GrowboxTableAction).first).right;
+    expect((headerRight - buttonRight).abs(), lessThan(4),
+        reason: 'Actions heading is right-aligned over the button');
+
+    // Read-only rows get the neutral action: never Accept-emerald and
+    // never Reject-red.
+    expect(views.first.label, 'View');
+    expect(
+      views.every((v) => v.variant == GrowboxTableActionVariant.neutral),
+      isTrue,
+      reason: 'a View action must not borrow Accept/Reject styling',
+    );
+    expect(tester.takeException(), isNull,
+        reason: 'the added column must not overflow the table');
+
+    // The action opens the same percent-encoded order deep link.
+    await tester.ensureVisible(find.text('View').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(OrderDetailsScreen), findsOneWidget,
+        reason: 'View deep-links to that order');
+  });
+
+  testWidgets('narrowest desktop (1024): Actions column survives, no overflow',
+      (tester) async {
+    await pumpSales(
+      tester,
+      themeModeIndex: 1,
+      size: const Size(1024, 900), // exactly at the tablet breakpoint
+    );
+
+    expect(find.text('Actions'), findsOneWidget,
+        reason: 'the Actions heading holds at every table width');
+    expect(find.byType(GrowboxTableAction), findsWidgets);
+    expect(tester.takeException(), isNull,
+        reason: 'the extra fixed column must not overflow the row');
   });
 }

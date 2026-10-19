@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,7 @@ import 'package:growbox_vendor/shared/widgets/growbox_filter_chip.dart';
 import 'package:growbox_vendor/shared/widgets/growbox_page_header.dart';
 import 'package:growbox_vendor/shared/widgets/growbox_status_pill.dart';
 import 'package:growbox_vendor/shared/widgets/growbox_table.dart';
+import 'package:growbox_vendor/shared/widgets/growbox_table_action.dart';
 
 import 'load_roboto.dart';
 
@@ -412,6 +414,176 @@ void main() {
     });
   });
 
+  // ── GrowboxTableAction ───────────────────────────────────────────────
+
+  group('GrowboxTableAction', () {
+    /// The button's Container — the only one in its subtree.
+    BoxDecoration actionDecoration(WidgetTester tester) =>
+        (tester.widget<Container>(find.descendant(
+              of: find.byType(GrowboxTableAction),
+              matching: find.byType(Container),
+            ))
+            .decoration! as BoxDecoration);
+
+    /// Where the pointer waits between hovers: well away from the button,
+    /// which sits at the scaffold's top-left corner — Offset.zero is ON it.
+    const awayFromButton = Offset(700, 500);
+
+    /// Parks one mouse pointer for the whole test.
+    ///
+    /// A test may hold only one live mouse device: adding a second pointer
+    /// while the first is still down trips MouseTracker's Added/Removed
+    /// pairing assertion, so hover tests move this single pointer on and off
+    /// instead of creating a fresh gesture per round.
+    Future<TestGesture> addParkedMouse(WidgetTester tester) async {
+      final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await pointer.addPointer(location: awayFromButton);
+      addTearDown(pointer.removePointer);
+      return pointer;
+    }
+
+    /// Moves the parked pointer onto the button and lets the hover rebuild run.
+    Future<void> hoverOn(WidgetTester tester, TestGesture pointer) async {
+      await pointer.moveTo(tester.getCenter(find.byType(GrowboxTableAction)));
+      await tester.pump();
+    }
+
+    testWidgets('solid: resting emerald in both themes, hover moves the fill',
+        (tester) async {
+      final pointer = await addParkedMouse(tester);
+      for (final brightness in [Brightness.light, Brightness.dark]) {
+        await tester.pumpWidget(themed(
+          const GrowboxTableAction(label: 'Accept', onTap: _tap),
+          brightness,
+        ));
+        // Settle MaterialApp's theme animation — otherwise the second
+        // round would still render the previous brightness for a frame.
+        await tester.pumpAndSettle();
+        expect(actionDecoration(tester).color, AppColors.primary,
+            reason: 'resting fill stays the shared emerald in $brightness');
+
+        await hoverOn(tester, pointer);
+        expect(actionDecoration(tester).color, isNot(AppColors.primary),
+            reason: 'hover must visibly move the fill in $brightness');
+
+        final region = tester.widget<MouseRegion>(find.descendant(
+          of: find.byType(GrowboxTableAction),
+          matching: find.byType(MouseRegion),
+        ));
+        expect(region.cursor, SystemMouseCursors.click,
+            reason: 'the button advertises clickability with its cursor');
+
+        // Park the pointer away so the next round starts at rest.
+        await pointer.moveTo(awayFromButton);
+        await tester.pump();
+      }
+    });
+
+    testWidgets('outline: ghost at rest, a tint (never solid red) on hover',
+        (tester) async {
+      final pointer = await addParkedMouse(tester);
+      for (final brightness in [Brightness.light, Brightness.dark]) {
+        await tester.pumpWidget(themed(
+          const GrowboxTableAction(
+            label: 'Reject',
+            variant: GrowboxTableActionVariant.outline,
+            onTap: _tap,
+          ),
+          brightness,
+        ));
+        await tester.pumpAndSettle();
+        final resting = actionDecoration(tester);
+        expect(resting.color, Colors.transparent);
+        expect(resting.border?.top.color, AppColors.error);
+
+        await hoverOn(tester, pointer);
+        expect(
+          actionDecoration(tester).color,
+          brightness == Brightness.light
+              ? AppColors.errorLight
+              : AppColors.error.withValues(alpha: 0.16),
+          reason: 'hover fills with a tint — a saturated red fill would '
+              'outweigh the Accept beside it',
+        );
+
+        await pointer.moveTo(awayFromButton);
+        await tester.pump();
+      }
+    });
+
+    testWidgets('neutral: quiet theme border at rest, primary on hover',
+        (tester) async {
+      final pointer = await addParkedMouse(tester);
+      for (final brightness in [Brightness.light, Brightness.dark]) {
+        await tester.pumpWidget(themed(
+          const GrowboxTableAction(
+            label: 'View',
+            variant: GrowboxTableActionVariant.neutral,
+            onTap: _tap,
+          ),
+          brightness,
+        ));
+        await tester.pumpAndSettle();
+        final primary = brightness == Brightness.light
+            ? AppColors.primary
+            : AppColors.darkPrimary;
+
+        final resting = actionDecoration(tester);
+        expect(resting.color, Colors.transparent);
+        expect(
+          resting.border?.top.color,
+          brightness == Brightness.light
+              ? AppColors.secondaryBorder
+              : AppColors.darkBorder,
+        );
+        expect(
+          tester.widget<Text>(find.text('View')).style?.color,
+          brightness == Brightness.light
+              ? AppColors.textSecondary
+              : AppColors.darkTextSecondary,
+        );
+
+        await hoverOn(tester, pointer);
+        final hovered = actionDecoration(tester);
+        expect(
+          hovered.color,
+          brightness == Brightness.light
+              ? AppColors.primarySurface
+              : AppColors.darkPrimarySurface,
+        );
+        expect(hovered.border?.top.color, primary);
+        expect(tester.widget<Text>(find.text('View')).style?.color, primary);
+
+        await pointer.moveTo(awayFromButton);
+        await tester.pump();
+      }
+    });
+
+    testWidgets('pointer leaving restores the resting fill', (tester) async {
+      await tester.pumpWidget(themed(
+        const GrowboxTableAction(label: 'Accept', onTap: _tap),
+        Brightness.light,
+      ));
+      await tester.pumpAndSettle();
+
+      final pointer = await addParkedMouse(tester);
+      await hoverOn(tester, pointer);
+      expect(actionDecoration(tester).color, isNot(AppColors.primary));
+
+      // Scoped to the button — MaterialApp's tree carries MouseRegions too.
+      final region = tester.widget<MouseRegion>(find.descendant(
+        of: find.byType(GrowboxTableAction),
+        matching: find.byType(MouseRegion),
+      ));
+      expect(region.cursor, SystemMouseCursors.click);
+
+      await pointer.moveTo(awayFromButton);
+      await tester.pump();
+      expect(actionDecoration(tester).color, AppColors.primary,
+          reason: 'exit must clear the hover state');
+    });
+  });
+
   // ── pages render the shared pieces ───────────────────────────────────
 
   group('pages use the shared components', () {
@@ -494,3 +666,6 @@ void main() {
 
 /// Const-friendly no-op callback for chip widgets in tests.
 void _noop(bool _) {}
+
+/// Const-friendly no-op callback for tap widgets in tests.
+void _tap() {}

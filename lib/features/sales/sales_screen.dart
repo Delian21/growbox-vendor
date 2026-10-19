@@ -14,11 +14,18 @@ import '../../shared/widgets/growbox_filter_chip.dart';
 import '../../shared/widgets/growbox_page_header.dart';
 import '../../shared/widgets/growbox_status_pill.dart';
 import '../../shared/widgets/growbox_table.dart';
+import '../../shared/widgets/growbox_table_action.dart';
 import '../../shared/widgets/growbox_empty_state.dart';
 import '../../shared/widgets/growbox_responsive_grid.dart';
 
 class SalesScreen extends StatelessWidget {
   const SalesScreen({super.key});
+
+  /// Fixed width of the trailing Actions column — the same 96px the
+  /// Dashboard's Recent Orders table uses, so the right-aligned heading
+  /// and every row's reserved cell share one right gutter with the other
+  /// two tables.
+  static const double _actionsColWidth = 96;
 
   @override
   Widget build(BuildContext context) {
@@ -660,6 +667,16 @@ class SalesScreen extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         SizedBox(width: 80, child: GrowboxTable.headerCell('Date', isDark)),
+        // Trailing Actions heading, right-aligned over the reserved cell
+        // — the same treatment as the Dashboard and Orders tables.
+        const SizedBox(width: AppDimensions.md),
+        SizedBox(
+          width: _actionsColWidth,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: GrowboxTable.headerCell('Actions', isDark),
+          ),
+        ),
       ],
     );
   }
@@ -782,6 +799,23 @@ class SalesScreen extends StatelessWidget {
             child: Text(
               _formatDate(txn.date),
               style: GrowboxTable.metaStyle(isDark),
+            ),
+          ),
+          // Reserved Actions cell on EVERY row, right-aligned like the
+          // other tables, so columns never shift. Transactions are
+          // read-only, so the action is the neutral "View" — it deep-links
+          // to the same encoded order route as the Order column.
+          const SizedBox(width: AppDimensions.md),
+          SizedBox(
+            width: _actionsColWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: GrowboxTableAction(
+                label: 'View',
+                variant: GrowboxTableActionVariant.neutral,
+                onTap: () =>
+                    context.go('/orders/${Uri.encodeComponent(txn.orderId)}'),
+              ),
             ),
           ),
         ],
