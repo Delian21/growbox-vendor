@@ -24,9 +24,23 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
   bool _sidebarCollapsed = false;
-  bool _contentExpanded = true;
   bool _isHoveringSidebar = false;
+
+  /// Whether the sidebar lays its LABELS out (nav text, section titles,
+  /// the My Account strip).
+  ///
+  /// This is deliberately the only gate for label layout — never the width.
+  /// The width is mid-animation whenever this matters, and a row that is
+  /// shrinking under a laid-out label squeezes it to one letter per line.
+  /// Collapsing therefore clears this in the SAME setState that starts the
+  /// width animation; expanding sets it again after [_sidebarContentDelay],
+  /// once the row is wide enough to hold the text.
   bool _showExpandedContent = true;
+
+  /// How long the 250ms width animation gets before labels are laid out again
+  /// when the sidebar is expanding (hover or toggle).
+  static const Duration _sidebarContentDelay = Duration(milliseconds: 200);
+
   Timer? _sidebarContentTimer;
   int _mobileNavIndex = 0;
   int? _pressedNavIndex;
@@ -263,9 +277,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         ? AppDimensions.sidebarWidth
         : AppDimensions.sidebarCollapsedWidth;
 
-    // When hovering a collapsed sidebar, show expanded content after a delay
-    // so text doesn't appear while the sidebar width is still animating
-    final showExpandedContent = !_sidebarCollapsed ? true : _showExpandedContent;
+    // Labels follow _showExpandedContent ALONE. The old expression here
+    // (`!_sidebarCollapsed ? true : _showExpandedContent`) re-enabled labels
+    // the instant the collapsed flag was set, so on the first collapse they
+    // stayed laid out while the row narrowed and wrapped per letter.
+    final showExpandedContent = _showExpandedContent;
 
     return MouseRegion(
       onEnter: (_) {
@@ -273,8 +289,9 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         _isHoveringSidebar = true;
         // Delay content expansion so text appears after width has expanded
         _sidebarContentTimer?.cancel();
-        _sidebarContentTimer = Timer(const Duration(milliseconds: 200), () {
-          if (mounted && _isHoveringSidebar) {
+        // Expanding only: the width has to grow before labels come back.
+        _sidebarContentTimer = Timer(_sidebarContentDelay, () {
+          if (mounted && _isHoveringSidebar && _sidebarCollapsed) {
             setState(() => _showExpandedContent = true);
           }
         });
@@ -284,10 +301,12 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         if (!mounted) return;
         _sidebarContentTimer?.cancel();
         if (_isHoveringSidebar) {
-          _isHoveringSidebar = false;
-          // Hide content immediately before width collapses
-          _showExpandedContent = false;
-          setState(() {});
+          // Labels leave the tree in the same frame the width starts
+          // shrinking — same reason as the collapse toggle.
+          setState(() {
+            _isHoveringSidebar = false;
+            _showExpandedContent = false;
+          });
         }
       },
       child: ClipRect(
@@ -336,7 +355,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                               _NavItem(Icons.bar_chart_outlined, Icons.bar_chart, AppStrings.sales, '/sales'),
                             ],
                             location,
-                            !showExpandedContent,
+                            // Geometry follows the width target, so icons hold
+                            // still while the labels are still withheld.
+                            !isEffectivelyExpanded,
+                            // Labels follow the reveal gate.
+                            showExpandedContent,
                             isDark,
                           ),
                           const SizedBox(height: AppDimensions.lg),
@@ -349,7 +372,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                               _NavItem(Icons.settings_outlined, Icons.settings, AppStrings.settings, '/settings'),
                             ],
                             location,
-                            !showExpandedContent,
+                            // Geometry follows the width target, so icons hold
+                            // still while the labels are still withheld.
+                            !isEffectivelyExpanded,
+                            // Labels follow the reveal gate.
+                            showExpandedContent,
                             isDark,
                           ),
                         ],
@@ -360,9 +387,13 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     height: 1,
                     color: AppColors.darkBorder.withValues(alpha: 0.4),
                   ),
-                  _buildMyAccountSection(isDark, !isEffectivelyExpanded),
+                  // Same label gate as the nav items: no squeezed text while
+                  // the width animates in either direction.
+                  _buildMyAccountSection(isDark, !showExpandedContent),
                   if (!_isMobile(context))
-                    _buildCollapseToggle(_contentExpanded, isDark),
+                    // The arrow is an affordance, not a label: it flips with
+                    // the collapsed state immediately.
+                    _buildCollapseToggle(!_sidebarCollapsed, isDark),
                 ],
               ),
             ),
@@ -439,12 +470,13 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
     List<_NavItem> items,
     String location,
     bool isCollapsed,
+    bool showLabels,
     bool isDark,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!isCollapsed)
+        if (showLabels)
           Padding(
             padding: const EdgeInsets.only(
               left: AppDimensions.lg,
@@ -464,16 +496,22 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
             ),
           ),
           ...items.map(
-          (item) => _buildNavItem(item, location, isCollapsed, isDark),
+          (item) =>
+              _buildNavItem(item, location, isCollapsed, showLabels, isDark),
         ),
       ],
     );
   }
 
+  /// [isCollapsed] drives geometry — centring and padding — and follows the
+  /// sidebar's width target. [showLabels] drives label/badge layout and
+  /// follows [_showExpandedContent]. Keeping them apart is what lets the icons
+  /// hold their final position while the labels are still withheld.
   Widget _buildNavItem(
     _NavItem item,
     String location,
     bool isCollapsed,
+    bool showLabels,
     bool isDark,
   ) {
     final isActive = location.startsWith(item.route);
@@ -523,7 +561,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                               ? AppColors.darkTextSecondary
                               : const Color(0xB3FFFFFF)),
                     ),
-                    if (isCollapsed && item.badgeCount != null && item.badgeCount! > 0)
+                    // The dot stands in for the count badge whenever the
+                    // text badge is not laid out.
+                    if (!showLabels &&
+                        item.badgeCount != null &&
+                        item.badgeCount! > 0)
                       Positioned(
                         right: -2,
                         top: -2,
@@ -543,11 +585,17 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                       ),
                   ],
                 ),
-                if (!isCollapsed) ...[
+                if (showLabels) ...[
                   const SizedBox(width: AppDimensions.md),
                   Expanded(
                     child: Text(
                       item.label,
+                      // Safety net: if a future timing change ever lets a label
+                      // through while the row is narrow, it clips instead of
+                      // stacking one letter per line.
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight:
@@ -592,23 +640,21 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
     return InkWell(
       onTap: () {
         final willCollapse = !_sidebarCollapsed;
+        // A pending content switch belongs to the opposite direction.
+        _sidebarContentTimer?.cancel();
         if (willCollapse) {
-          // Collapsing: switch content first, then animate width
+          // Collapsing: labels leave the tree in the SAME setState that starts
+          // the width animation, so nothing is laid out while the row narrows.
           setState(() {
-            _contentExpanded = false;
             _sidebarCollapsed = true;
+            _showExpandedContent = false;
           });
         } else {
-          // Expanding: animate width first, then switch content
-          setState(() {
-            _sidebarCollapsed = false;
-          });
-          Future.delayed(const Duration(milliseconds: 260), () {
-            if (mounted) {
-              setState(() {
-                _contentExpanded = true;
-              });
-            }
+          // Expanding: animate the width first, then reveal the labels.
+          setState(() => _sidebarCollapsed = false);
+          _sidebarContentTimer = Timer(_sidebarContentDelay, () {
+            if (!mounted || _sidebarCollapsed) return;
+            setState(() => _showExpandedContent = true);
           });
         }
       },
@@ -633,13 +679,21 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
             ),
             if (isExpanded) ...[
               const SizedBox(width: AppDimensions.md),
-              Text(
-                'Collapse',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark
-                      ? AppColors.darkTextTertiary
-                      : const Color(0xB3FFFFFF),
+              // Safety net for the rail's own label: while the width is still
+              // animating the row can be offered less room than the text
+              // needs, and an unconstrained Text overflows the Row.
+              Flexible(
+                child: Text(
+                  'Collapse',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.clip,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark
+                        ? AppColors.darkTextTertiary
+                        : const Color(0xB3FFFFFF),
+                  ),
                 ),
               ),
             ],
@@ -1430,7 +1484,10 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                               _NavItem(Icons.settings_outlined, Icons.settings, AppStrings.settings, '/settings'),
                             ],
                             location,
+                            // The drawer is always full width: never collapsed,
+                            // always labelled.
                             false,
+                            true,
                             isDark,
                           ),
                         ],
