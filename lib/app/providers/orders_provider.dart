@@ -10,18 +10,27 @@ class OrdersProvider extends ChangeNotifier {
   bool _isLoading = false;
   OrderStatus? _filterStatus;
 
-  /// Filtered view, sorted for action: pending orders first (they need a
-  /// decision), then newest to oldest within each group.
+  /// The one order every list in the app is shown in: pending first (those
+  /// need a decision), then newest to oldest within each group.
+  ///
+  /// Exposed so the filtered view, [allOrders] and any future consumer sort
+  /// identically — a second comparator elsewhere is how the Orders page and
+  /// the dashboard's Recent Orders drift apart.
+  static int compareForAction(Order a, Order b) {
+    final aPending = a.status == OrderStatus.pending ? 0 : 1;
+    final bPending = b.status == OrderStatus.pending ? 0 : 1;
+    if (aPending != bPending) return aPending - bPending;
+    return b.createdAt.compareTo(a.createdAt);
+  }
+
+  /// Filtered view in [compareForAction] order. The status filter runs over
+  /// the canonical order, so the chips (All / Pending / …) keep the same
+  /// pending-first, newest-to-oldest shape inside each status.
   List<Order> get orders {
     final list = _filterStatus == null
         ? List<Order>.from(_orders)
         : _orders.where((o) => o.status == _filterStatus).toList();
-    list.sort((a, b) {
-      final aPending = a.status == OrderStatus.pending ? 0 : 1;
-      final bPending = b.status == OrderStatus.pending ? 0 : 1;
-      if (aPending != bPending) return aPending - bPending;
-      return b.createdAt.compareTo(a.createdAt);
-    });
+    list.sort(compareForAction);
     return list;
   }
 
@@ -36,10 +45,14 @@ class OrdersProvider extends ChangeNotifier {
       ? _orders.length
       : _orders.where((o) => o.status == status).length;
 
-  /// Unfiltered orders. Consumers that need the whole picture (e.g. the
-  /// Sales page's revenue) must not be affected by the Orders page's
-  /// status filter, so they read this instead of [orders].
-  List<Order> get allOrders => List.unmodifiable(_orders);
+  /// Unfiltered orders, in the same [compareForAction] order as [orders].
+  /// Consumers that need the whole picture (e.g. the Sales page's revenue)
+  /// must not be affected by the Orders page's status filter, so they read
+  /// this instead of [orders] — but they get the identical sequence, so the
+  /// dashboard's Recent Orders and the Orders table never disagree.
+  List<Order> get allOrders => List.unmodifiable(
+        List<Order>.from(_orders)..sort(compareForAction),
+      );
 
   /// Prefs key holding the decided-state overlay (status + rejection
   /// reason per order id) so decisions survive a page reload.

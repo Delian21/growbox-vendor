@@ -90,12 +90,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   String _dayLabel(DateTime day) => '${day.day} ${_months[day.month - 1]}';
 
-  /// Newest-first slice of the live orders for the Recent Orders table.
-  List<Order> _recentOrdersOf(OrdersProvider orders) {
-    final sorted = [...orders.allOrders]
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return sorted.take(5).toList();
-  }
+  /// First five orders of the provider's canonical order (pending first,
+  /// then newest to oldest) — the exact sequence the Orders page renders, so
+  /// both screens agree without a dashboard-only comparator.
+  List<Order> _recentOrdersOf(OrdersProvider orders) =>
+      orders.allOrders.take(5).toList();
 
   // Shares its palette with the products filter chips via CategoryColors —
   // one hue per category, consistent app-wide.
@@ -1347,8 +1346,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ── RECENT ORDERS ──
   Widget _buildRecentOrdersSection(BuildContext context, bool isDark) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
-    // Live orders — newest first — from the SAME provider the Orders page
-    // renders, so an Accept here moves the same order both pages show.
+    // Live orders in the provider's order (pending first, then newest) from
+    // the SAME provider the Orders page renders, so an Accept here moves the
+    // same order both pages show.
     final recent = _recentOrdersOf(context.watch<OrdersProvider>());
 
     return Column(
