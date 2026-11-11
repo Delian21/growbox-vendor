@@ -442,77 +442,100 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
   }
 
   Widget _buildLogo(bool isCollapsed, bool isDark) {
-    return Container(
-      height: AppDimensions.headerHeight,
+    // Collapsed rail is 72px wide, but the badge is 52px and the expanded
+    // padding is lg a side — 100px of content in 72px. That is why the mark
+    // looked squeezed and sat left of centre with the wordmark's empty
+    // Flexible slot beside it. Collapsed now shows a smaller mark, no side
+    // padding and no wordmark; AnimatedAlign does the centring.
+    final markSize = isCollapsed ? 40.0 : 52.0;
+
+    return AnimatedContainer(
+      duration: MainLayout.sidebarAnimationDuration,
+      curve: Curves.easeInOut,
+      // minHeight, not a fixed height: at 2.0x text the two-line wordmark
+      // needs ~77px, and a fixed 64px box overflowed instead of growing.
+      constraints: const BoxConstraints(minHeight: AppDimensions.headerHeight),
       padding: EdgeInsets.symmetric(
-        horizontal: isCollapsed ? AppDimensions.sm : AppDimensions.lg,
+        horizontal: isCollapsed ? 0 : AppDimensions.lg,
       ),
-      child: Row(
-  children: [
-    ClipRRect(
-      borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-      child: Image.asset(
-        'assets/images/growbox_logo.png',
-        width: 52,
-        height: 52,
-        fit: BoxFit.contain,
-      ),
-    ),
-    // The wordmark cannot simply drop out of the Row the way the nav labels
-    // do: it has to shrink and clip while the rail animates, so the flexible
-    // slot bounds it and neither text is allowed to wrap.
-    Flexible(
-      child: AnimatedSize(
+      child: AnimatedAlign(
         duration: MainLayout.sidebarAnimationDuration,
         curve: Curves.easeInOut,
-        child: AnimatedOpacity(
-          opacity: isCollapsed ? 0.0 : 1.0,
-          duration: const Duration(milliseconds: 200),
-          child: isCollapsed
-              ? const SizedBox(width: 0)
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(width: AppDimensions.md),
-                    Flexible(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'GROWBOX',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          Text(
-                            'Vendor Portal',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark
-                                  ? AppColors.darkTextTertiary
-                                  : const Color(0xB3FFFFFF),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+        alignment: isCollapsed ? Alignment.center : Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The mark's box tweens 52 → 40 with the rail, so it never jumps.
+            AnimatedContainer(
+              key: const Key('sidebar-logo-mark'),
+              duration: MainLayout.sidebarAnimationDuration,
+              curve: Curves.easeInOut,
+              width: markSize,
+              height: markSize,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                child: Image.asset(
+                  'assets/images/growbox_logo.png',
+                  fit: BoxFit.contain,
                 ),
+              ),
+            ),
+            // The wordmark cannot simply drop out of the Row the way the nav
+            // labels do: it has to shrink and clip while the rail animates, so
+            // the flexible slot bounds it and neither text is allowed to wrap.
+            Flexible(
+              child: AnimatedSize(
+                duration: MainLayout.sidebarAnimationDuration,
+                curve: Curves.easeInOut,
+                child: AnimatedOpacity(
+                  opacity: isCollapsed ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: isCollapsed
+                      ? const SizedBox(width: 0, height: 0)
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(width: AppDimensions.md),
+                            Flexible(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'GROWBOX',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Vendor Portal',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? AppColors.darkTextTertiary
+                                          : const Color(0xB3FFFFFF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    ),
-  ],
-),
     );
   }
 
@@ -642,11 +665,12 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     child: Text(
                       item.label,
                       // Safety net: if a future timing change ever lets a label
-                      // through while the row is narrow, it clips instead of
-                      // stacking one letter per line.
+                      // through while the row is narrow, it ellipsizes instead
+                      // of stacking one letter per line. Ellipsis, not clip:
+                      // at 2.0x text a clipped "Notificatio" reads as broken.
                       maxLines: 1,
                       softWrap: false,
-                      overflow: TextOverflow.clip,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight:

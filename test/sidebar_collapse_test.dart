@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:growbox_vendor/core/constants/app_dimensions.dart';
 import 'package:growbox_vendor/main.dart';
 import 'package:growbox_vendor/shared/layouts/main_layout.dart';
 
@@ -104,8 +105,10 @@ void main() {
       final text = tester.widget<Text>(find.text(label));
       expect(text.maxLines, 1, reason: '"$label" must cap at one line');
       expect(text.softWrap, isFalse, reason: '"$label" must not wrap');
-      expect(text.overflow, TextOverflow.clip,
-          reason: '"$label" must clip instead of wrapping');
+      // Ellipsis (not wrap, not a hard clip): at 2.0x text the label is
+      // narrower than the rail, and "Notificatio" cut mid-glyph reads broken.
+      expect(text.overflow, TextOverflow.ellipsis,
+          reason: '"$label" must ellipsize instead of wrapping');
     }
   });
 
@@ -139,37 +142,84 @@ void main() {
     );
   });
 
-  testWidgets('textScaler 1.5: collapsing and expanding never overflow',
+  testWidgets('collapsed rail centres a smaller logo mark without overflow',
       (tester) async {
-    // Emulated accessibility text size — the case where the wordmark and the
-    // account strip get more text than the rail has room for.
-    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-
     await pumpMainLayout(tester);
-    expect(tester.takeException(), isNull,
-        reason: 'no overflow at rest, 1.5x text');
 
-    for (var cycle = 0; cycle < 2; cycle++) {
-      await tester.tap(find.byIcon(Icons.keyboard_arrow_left));
-      for (var frame = 0; frame < 5; frame++) {
-        await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.takeException(), isNull,
-            reason: 'collapse frame $frame overflowed at 1.5x text');
-      }
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull,
-          reason: 'collapse settled state overflowed at 1.5x text');
+    // Expanded: the full 52px badge sits inside the rail's lg padding.
+    final expanded = tester.getRect(find.byKey(const Key('sidebar-logo-mark')));
+    expect(expanded.width, 52, reason: 'expanded keeps the full-size mark');
+    expect(expanded.left, AppDimensions.lg,
+        reason: 'expanded mark should start at the rail padding, not centred');
+    expect(find.text('GROWBOX'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.keyboard_arrow_right));
-      for (var frame = 0; frame < 5; frame++) {
-        await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.takeException(), isNull,
-            reason: 'expand frame $frame overflowed at 1.5x text');
-      }
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull,
-          reason: 'expand settled state overflowed at 1.5x text');
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_left));
+    // Every frame of the shrink must stay clean, so the 52 → 40 badge and the
+    // padding collapse cannot overflow the narrowing rail.
+    for (var frame = 0; frame < 5; frame++) {
+      await tester.pump(const Duration(milliseconds: 60));
+      final e = tester.takeException();
+      expect(e, isNull, reason: 'logo overflowed on collapse frame $frame: $e');
     }
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull,
+        reason: 'collapsed rail must not overflow');
+
+    final mark = find.byKey(const Key('sidebar-logo-mark'));
+    final rect = tester.getRect(mark);
+    expect(
+      rect.center.dx,
+      closeTo(AppDimensions.sidebarCollapsedWidth / 2, 0.5),
+      reason: 'logo mark must be horizontally centred in the 72px rail',
+    );
+    expect(
+      rect.width,
+      lessThanOrEqualTo(AppDimensions.sidebarCollapsedWidth - 16),
+      reason: 'the mark must keep at least 8px of margin on each side',
+    );
+    expect(find.text('GROWBOX'), findsNothing,
+        reason: 'collapsed rail shows the mark only, with no wordmark');
   });
+
+  // Emulated accessibility text sizes — the cases where the wordmark, the nav
+  // rows and the account strip get more text than the rail has room for.
+  // 2.0 is the platform maximum on Android/iOS and the one that used to break.
+  for (final scale in [1.5, 2.0]) {
+    testWidgets('textScaler $scale: collapsing and expanding never overflow',
+        (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await pumpMainLayout(tester);
+      final atRest = tester.takeException();
+      expect(atRest, isNull,
+          reason: 'no overflow at rest, ${scale}x text: $atRest');
+
+      for (var cycle = 0; cycle < 2; cycle++) {
+        await tester.tap(find.byIcon(Icons.keyboard_arrow_left));
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 60));
+          final e = tester.takeException();
+          expect(e, isNull,
+              reason: 'collapse frame $frame overflowed at ${scale}x: $e');
+        }
+        await tester.pumpAndSettle();
+        final collapsed = tester.takeException();
+        expect(collapsed, isNull,
+            reason: 'collapse settled state overflowed at ${scale}x: $collapsed');
+
+        await tester.tap(find.byIcon(Icons.keyboard_arrow_right));
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 60));
+          final e = tester.takeException();
+          expect(e, isNull,
+              reason: 'expand frame $frame overflowed at ${scale}x: $e');
+        }
+        await tester.pumpAndSettle();
+        final expanded = tester.takeException();
+        expect(expanded, isNull,
+            reason: 'expand settled state overflowed at ${scale}x: $expanded');
+      }
+    });
+  }
 }
