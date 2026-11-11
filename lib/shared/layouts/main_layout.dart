@@ -18,6 +18,47 @@ class MainLayout extends StatefulWidget {
 
   const MainLayout({super.key, required this.child});
 
+  /// The rail's width animation — the single number for the whole
+  /// collapse/expand choreography, so the label timing can be derived from it
+  /// instead of being a second, unrelated constant.
+  static const int sidebarAnimationMs = 250;
+  static const Duration sidebarAnimationDuration =
+      Duration(milliseconds: sidebarAnimationMs);
+
+  /// How long the width animation runs before labels are laid out again when
+  /// the sidebar expands (hover or toggle). Derived from the animation so the
+  /// two can never drift apart, and it MUST stay below
+  /// [sidebarAnimationDuration]: labels revealed any earlier land in a row that
+  /// is still too narrow (the per-letter squeeze), and a delay at 100% would
+  /// pop them in only after the rail has already stopped moving.
+  static const Duration sidebarContentDelay =
+      Duration(milliseconds: sidebarAnimationMs * 8 ~/ 10);
+
+  /// Business name for the account strip / popup / drawer.
+  ///
+  /// [AuthProvider.vendorName] is the BUSINESS name — the provider has no
+  /// separate person-name field — so both account lines read from it. A
+  /// neutral placeholder covers "auth has not populated it yet" and signed-out
+  /// previews, so the strip never renders a blank line.
+  static String vendorDisplayName(String? name) {
+    final trimmed = name?.trim() ?? '';
+    return trimmed.isEmpty ? 'Your store' : trimmed;
+  }
+
+  /// Avatar initials: first letters of the first two words, uppercase, and
+  /// `?` when there is no name at all (never an empty circle).
+  static String vendorInitials(String? name) {
+    final words = (name ?? '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return '?';
+    final first = words.first.substring(0, 1).toUpperCase();
+    if (words.length == 1) return first;
+    return first + words[1].substring(0, 1).toUpperCase();
+  }
+
   @override
   State<MainLayout> createState() => _MainLayoutState();
 }
@@ -33,13 +74,10 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
   /// The width is mid-animation whenever this matters, and a row that is
   /// shrinking under a laid-out label squeezes it to one letter per line.
   /// Collapsing therefore clears this in the SAME setState that starts the
-  /// width animation; expanding sets it again after [_sidebarContentDelay],
-  /// once the row is wide enough to hold the text.
+  /// width animation; expanding sets it again after
+  /// [MainLayout.sidebarContentDelay], once the row is wide enough to hold
+  /// the text.
   bool _showExpandedContent = true;
-
-  /// How long the 250ms width animation gets before labels are laid out again
-  /// when the sidebar is expanding (hover or toggle).
-  static const Duration _sidebarContentDelay = Duration(milliseconds: 200);
 
   Timer? _sidebarContentTimer;
   int _mobileNavIndex = 0;
@@ -290,7 +328,7 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         // Delay content expansion so text appears after width has expanded
         _sidebarContentTimer?.cancel();
         // Expanding only: the width has to grow before labels come back.
-        _sidebarContentTimer = Timer(_sidebarContentDelay, () {
+        _sidebarContentTimer = Timer(MainLayout.sidebarContentDelay, () {
           if (mounted && _isHoveringSidebar && _sidebarCollapsed) {
             setState(() => _showExpandedContent = true);
           }
@@ -311,7 +349,7 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
       },
       child: ClipRect(
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+          duration: MainLayout.sidebarAnimationDuration,
           curve: Curves.easeInOut,
           width: width,
           height: double.infinity,
@@ -420,44 +458,57 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         fit: BoxFit.contain,
       ),
     ),
-    AnimatedSize(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-      child: AnimatedOpacity(
-        opacity: isCollapsed ? 0.0 : 1.0,
-        duration: const Duration(milliseconds: 200),
-        child: isCollapsed
-            ? const SizedBox(width: 0)
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: AppDimensions.md),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'GROWBOX',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 1,
-                        ),
+    // The wordmark cannot simply drop out of the Row the way the nav labels
+    // do: it has to shrink and clip while the rail animates, so the flexible
+    // slot bounds it and neither text is allowed to wrap.
+    Flexible(
+      child: AnimatedSize(
+        duration: MainLayout.sidebarAnimationDuration,
+        curve: Curves.easeInOut,
+        child: AnimatedOpacity(
+          opacity: isCollapsed ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          child: isCollapsed
+              ? const SizedBox(width: 0)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(width: AppDimensions.md),
+                    Flexible(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'GROWBOX',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                          Text(
+                            'Vendor Portal',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark
+                                  ? AppColors.darkTextTertiary
+                                  : const Color(0xB3FFFFFF),
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        'Vendor Portal',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark
-                              ? AppColors.darkTextTertiary
-                              : const Color(0xB3FFFFFF),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     ),
   ],
@@ -652,7 +703,7 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         } else {
           // Expanding: animate the width first, then reveal the labels.
           setState(() => _sidebarCollapsed = false);
-          _sidebarContentTimer = Timer(_sidebarContentDelay, () {
+          _sidebarContentTimer = Timer(MainLayout.sidebarContentDelay, () {
             if (!mounted || _sidebarCollapsed) return;
             setState(() => _showExpandedContent = true);
           });
@@ -1068,6 +1119,12 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
   // ── MY ACCOUNT SECTION ──
   // ══════════════════════════════════════════
   Widget _buildMyAccountSection(bool isDark, bool isCollapsed) {
+    // `watch`, not `read`: the strip has to repaint when the name arrives
+    // after login (or changes after a profile edit).
+    final vendorName = context.watch<AuthProvider>().vendorName;
+    final displayName = MainLayout.vendorDisplayName(vendorName);
+    final initials = MainLayout.vendorInitials(vendorName);
+
     return PopupMenuButton<String>(
       onSelected: (value) {
         switch (value) {
@@ -1080,6 +1137,10 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
         }
       },
       offset: const Offset(0, -60),
+      // Bounded menu width (Material's 280px default cap): a long business
+      // name must ellipsize inside the header, not let the intrinsic width
+      // shrink below what the other items need.
+      constraints: const BoxConstraints(minWidth: 240, maxWidth: 280),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
       ),
@@ -1089,27 +1150,37 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
           enabled: false,
           child: Row(
             children: [
-              _buildAccountAvatar(size: 32, fallbackLabel: 'FA'),
+              _buildAccountAvatar(size: 32, fallbackLabel: initials),
               const SizedBox(width: AppDimensions.md),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Farm Fresh Ltd',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              // Flexible: the popup is sized by its content, so a long
+              // business name has to ellipsize instead of widening the menu.
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                      ),
                     ),
-                  ),
-                  Text(
-                    'Vendor',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                    Text(
+                      'Vendor',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1125,11 +1196,18 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                 color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
               ),
               const SizedBox(width: AppDimensions.md),
-              Text(
-                'View Profile',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              // Every label row flexes: the menu width is capped, so a
+              // longer label ellipsizes instead of overflowing its Row.
+              Flexible(
+                child: Text(
+                  'View Profile',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -1145,11 +1223,16 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                 color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
               ),
               const SizedBox(width: AppDimensions.md),
-              Text(
-                'Account Settings',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  'Account Settings',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -1166,11 +1249,16 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                 color: AppColors.error,
               ),
               const SizedBox(width: AppDimensions.md),
-              const Text(
-                'Logout',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.error,
+              const Flexible(
+                child: Text(
+                  'Logout',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.error,
+                  ),
                 ),
               ),
             ],
@@ -1195,10 +1283,10 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
           ),
         ),
         child: isCollapsed
-            ? _buildAccountAvatar()
+            ? _buildAccountAvatar(fallbackLabel: initials)
             : Row(
           children: [
-            _buildAccountAvatar(),
+            _buildAccountAvatar(fallbackLabel: initials),
             const SizedBox(width: AppDimensions.md),
             Expanded(
               child: Column(
@@ -1207,6 +1295,11 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                 children: [
                   Text(
                     'My Account',
+                    // Ellipsis, not clip: a truncated account name that just
+                    // stops mid-glyph reads as broken.
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -1219,7 +1312,10 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin {
                     ),
                   ),
                   Text(
-                    'Farm Fresh Ltd',
+                    displayName,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark

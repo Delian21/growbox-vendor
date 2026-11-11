@@ -127,4 +127,49 @@ void main() {
       expectNavLabels(visible: true);
     }
   });
+
+  // The timing constants are read from the widget, not duplicated here, so a
+  // future change to the animation immediately shows up in this assertion.
+  test('the label delay stays below the width animation', () {
+    expect(
+      MainLayout.sidebarContentDelay,
+      lessThan(MainLayout.sidebarAnimationDuration),
+      reason: 'labels must be revealed before the rail stops moving, never '
+          'while it is still too narrow',
+    );
+  });
+
+  testWidgets('textScaler 1.5: collapsing and expanding never overflow',
+      (tester) async {
+    // Emulated accessibility text size — the case where the wordmark and the
+    // account strip get more text than the rail has room for.
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await pumpMainLayout(tester);
+    expect(tester.takeException(), isNull,
+        reason: 'no overflow at rest, 1.5x text');
+
+    for (var cycle = 0; cycle < 2; cycle++) {
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_left));
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(tester.takeException(), isNull,
+            reason: 'collapse frame $frame overflowed at 1.5x text');
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull,
+          reason: 'collapse settled state overflowed at 1.5x text');
+
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_right));
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(tester.takeException(), isNull,
+            reason: 'expand frame $frame overflowed at 1.5x text');
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull,
+          reason: 'expand settled state overflowed at 1.5x text');
+    }
+  });
 }
