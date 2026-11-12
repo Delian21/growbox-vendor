@@ -143,22 +143,25 @@ void main() {
       size: const Size(1440, 900),
     );
 
-    // Today → vs yesterday (ORD-004's ₦18,000 vs an empty yesterday).
+    // Today → ORD-004's ₦18,000 against an empty yesterday: no baseline, so
+    // the badge says "New" instead of a fake +100%.
     await tester.tap(find.text('Today'));
     await tester.pumpAndSettle();
-    expect(find.text('+100.0% vs yesterday'), findsOneWidget);
+    expect(find.text('New today'), findsOneWidget);
+    expect(find.textContaining('+100.0%'), findsNothing,
+        reason: 'an empty previous window has no percentage');
     expect(find.byType(LineChart), findsOneWidget,
         reason: 'filtered periods get the sparkline back');
 
     // This Week → vs last week.
     await tester.tap(find.text('This Week'));
     await tester.pumpAndSettle();
-    expect(find.text('+100.0% vs last week'), findsOneWidget);
+    expect(find.text('New this week'), findsOneWidget);
 
-    // This Month → vs last month.
+    // This Month → last month.
     await tester.tap(find.text('This Month'));
     await tester.pumpAndSettle();
-    expect(find.text('+100.0% vs last month'), findsOneWidget);
+    expect(find.text('New this month'), findsOneWidget);
   });
 
   test('provider: deltas are computed against the previous window', () {
@@ -190,11 +193,14 @@ void main() {
     final sales = SalesProvider(orders);
 
     expect(sales.revenueDelta('today'), 50.0);
-    expect(sales.revenueDelta('week'), 100.0,
-        reason: 'previous 7 days are empty → new activity caps at +100');
+    expect(sales.revenueDelta('week'), isNull,
+        reason: 'previous 7 days are empty → no baseline, so no percentage');
+    expect(sales.revenueIsFirstPeriod('week'), isTrue,
+        reason: 'revenue with an empty previous window is a first period');
+    expect(sales.revenueIsFirstPeriod('today'), isFalse);
     expect(sales.revenueDelta('all'), isNull);
 
-    // No activity in either window → exactly 0.0, the neutral case.
+    // No activity in either window → no comparison at all (nothing to show).
     // (30 days old: outside both the current AND the previous week/month
     // comparison windows.)
     final quiet = SalesProvider(OrdersProvider(initialOrders: [
@@ -204,11 +210,12 @@ void main() {
             productId: 'p1', productName: 'Fresh Tomatoes', quantity: 1, price: 2500),
       ]),
     ]));
-    expect(quiet.revenueDelta('today'), 0.0);
-    expect(quiet.revenueDelta('week'), 0.0);
+    expect(quiet.revenueDelta('today'), isNull);
+    expect(quiet.revenueDelta('week'), isNull);
+    expect(quiet.revenueIsFirstPeriod('today'), isFalse);
   });
 
-  testWidgets('empty orders: neutral 0.0% badge and empty state render',
+  testWidgets('empty orders: no comparison badge, empty state renders',
       (tester) async {
     await tester.runAsync(loadRoboto);
     final orders = OrdersProvider(initialOrders: const []);
@@ -227,15 +234,10 @@ void main() {
     sales.setPeriod('today');
     await tester.pumpAndSettle();
 
-    expect(find.text('0.0% vs yesterday'), findsOneWidget,
-        reason: 'no change renders the neutral badge');
-    final badge = tester
-        .widget<Text>(find.text('0.0% vs yesterday'))
-        .style
-        ?.color;
-    expect(badge, AppColors.textSecondary,
-        reason: 'neutral badge uses the secondary token, not green/red');
-    expect(find.byIcon(Icons.trending_flat), findsOneWidget);
+    expect(find.textContaining('vs yesterday'), findsNothing,
+        reason: 'no data in either window → the comparison is hidden');
+    expect(find.text('New today'), findsNothing,
+        reason: 'nothing sold yet, so it is not a new period');
     expect(find.text('No transactions yet'), findsOneWidget);
   });
 

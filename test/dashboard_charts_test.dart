@@ -133,12 +133,13 @@ void main() {
     expect(find.text('₦30k'), findsOneWidget);
     // The duplicate right axis (raw copies of the same sales scale) is gone.
     expect(find.text('100000'), findsNothing);
-    // 30 points → 3 date ticks (indices 0/10/20), spaced by real dates.
-    expect(find.text(dayLabel(29)), findsOneWidget,
+    // The default range fits the data (all orders are within a day → 7-day
+    // window) → 3 date ticks at indices 0/3/6, spaced by real dates.
+    expect(find.text(dayLabel(6)), findsOneWidget,
         reason: 'narrow screens should show 3 spaced date ticks');
-    expect(find.text(dayLabel(19)), findsOneWidget);
-    expect(find.text(dayLabel(9)), findsOneWidget);
-    expect(find.text(dayLabel(23)), findsNothing,
+    expect(find.text(dayLabel(3)), findsOneWidget);
+    expect(find.text(dayLabel(0)), findsOneWidget);
+    expect(find.text(dayLabel(5)), findsNothing,
         reason: 'the 5-tick layout belongs to wide screens only');
 
     // Narrow phone re-layout: any header/card overflow fails the test.
@@ -150,9 +151,9 @@ void main() {
     // Desktop: the two-column bento row keeps the full 5-tick treatment.
     tester.view.physicalSize = const Size(1280, 900);
     await tester.pumpAndSettle();
-    expect(find.text(dayLabel(23)), findsOneWidget,
+    expect(find.text(dayLabel(4)), findsOneWidget,
         reason: 'wide screens keep 5 date ticks');
-    expect(find.text(dayLabel(19)), findsNothing);
+    expect(find.text(dayLabel(5)), findsNothing);
 
     // At 1280 the category card is still too narrow for a beside-ring
     // legend (that needs the wide breakpoint) — legend stacks below.
@@ -164,11 +165,14 @@ void main() {
         greaterThan(desktopRing.bottom),
         reason: 'legend stacks under the ring below the wide threshold');
 
-    // Orders has its own count axis on the right: 7 orders land in one
-    // day → axis tops at 10, sharing the gridlines with the ₦ ticks.
+    // Orders has its own count axis on the right: 7 orders in one day →
+    // round ticks 0/5/10, never the converted-gridline values 10/7/3.
     expect(find.text('10'), findsOneWidget,
         reason: 'Orders secondary axis tops out at 10 for this data');
-    expect(find.text('3'), findsOneWidget);
+    expect(find.text('5'), findsWidgets,
+        reason: 'count ticks land on round numbers');
+    expect(find.text('3'), findsNothing,
+        reason: 'count labels must not be converted ₦ gridlines');
 
     expect(tester.takeException(), isNull);
   });

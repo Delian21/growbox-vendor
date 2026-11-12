@@ -205,10 +205,29 @@ class SalesProvider extends ChangeNotifier {
   /// Revenue change of the selected period against the equivalent previous
   /// window, as a percentage (e.g. 12.5 for +12.5%).
   ///
-  /// Both windows empty → 0.0 (rendered as the neutral badge); previous
-  /// empty with a positive current → 100.0 (new activity). Null for 'all',
-  /// where no comparison is shown.
+  /// Null when there is no honest comparison: the 'all' period, or a previous
+  /// window with no revenue at all. A first period is not a "+100%" jump —
+  /// [revenueIsFirstPeriod] reports that case so the card can say "New".
   double? revenueDelta(String period) {
+    final windows = _revenueWindows(period);
+    if (windows == null) return null;
+    final (current, previous) = windows;
+    if (previous == 0) return null;
+    return (current - previous) / previous * 100;
+  }
+
+  /// True when the current window has revenue but the one before it has none,
+  /// i.e. there is no baseline to compare against yet.
+  bool revenueIsFirstPeriod(String period) {
+    final windows = _revenueWindows(period);
+    if (windows == null) return false;
+    final (current, previous) = windows;
+    return current > 0 && previous == 0;
+  }
+
+  /// (current, previous) completed revenue for [period]; null for 'all',
+  /// which has no previous window to compare against.
+  (double, double)? _revenueWindows(String period) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -219,27 +238,28 @@ class SalesProvider extends ChangeNotifier {
             t.date.isBefore(end))
         .fold<double>(0, (sum, t) => sum + t.totalAmount);
 
-    final double current;
-    final double previous;
     switch (period) {
       case 'today':
-        current = revenueIn(today, now);
-        previous = revenueIn(today.subtract(const Duration(days: 1)), today);
+        return (
+          revenueIn(today, now),
+          revenueIn(today.subtract(const Duration(days: 1)), today),
+        );
       case 'week':
         final weekAgo = now.subtract(const Duration(days: 7));
-        current = revenueIn(weekAgo, now);
-        previous = revenueIn(now.subtract(const Duration(days: 14)), weekAgo);
+        return (
+          revenueIn(weekAgo, now),
+          revenueIn(now.subtract(const Duration(days: 14)), weekAgo),
+        );
       case 'month':
         final startOfMonth = DateTime(now.year, now.month, 1);
         final startOfPrevMonth = DateTime(now.year, now.month - 1, 1);
-        current = revenueIn(startOfMonth, now);
-        previous = revenueIn(startOfPrevMonth, startOfMonth);
+        return (
+          revenueIn(startOfMonth, now),
+          revenueIn(startOfPrevMonth, startOfMonth),
+        );
       default:
         return null;
     }
-
-    if (previous == 0) return current == 0 ? 0.0 : 100.0;
-    return (current - previous) / previous * 100;
   }
 
   // ── PERIODS ──

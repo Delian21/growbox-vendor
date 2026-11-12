@@ -25,7 +25,11 @@ List<SingleChildWidget> growboxProviders() => [
       // number on the Sales page and the dashboard ring.
       ChangeNotifierProvider(
           create: (ctx) => SalesProvider(ctx.read<OrdersProvider>())),
-      ChangeNotifierProvider(create: (_) => StoreProvider()..loadFromPrefs()),
+      // The store reads the account name so a first run agrees everywhere;
+      // once the vendor edits it, the store keeps its own saved name.
+      ChangeNotifierProvider(
+          create: (ctx) =>
+              StoreProvider(auth: ctx.read<AuthProvider>())..loadFromPrefs()),
       ChangeNotifierProvider(create: (_) => NotificationsProvider()),
     ];
 

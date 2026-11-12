@@ -102,6 +102,10 @@ class SalesScreen extends StatelessWidget {
     final sparkSpots =
         showComparison ? _sparkSpots(provider.transactions, period) : const <FlSpot>[];
     final sparkDelta =        showComparison ? provider.revenueDelta(period) : null;
+    // A period with revenue but no earlier revenue has no baseline, so it
+    // reads "New" rather than a fake +100%.
+    final sparkFirstPeriod =
+        showComparison && provider.revenueIsFirstPeriod(period);
     final cards = [
       _SummaryCard(
         title: 'Vendor Earnings',
@@ -118,8 +122,8 @@ class SalesScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildPrimaryCard(context, primary, isDark, sparkSpots, sparkDelta,
-            period),
+        _buildPrimaryCard(
+            context, primary, isDark, sparkSpots, sparkDelta, sparkFirstPeriod, period),
         const SizedBox(height: AppDimensions.lg),
         GrowboxResponsiveGrid(
           items: [
@@ -151,6 +155,7 @@ class SalesScreen extends StatelessWidget {
     bool isDark,
     List<FlSpot> sparkSpots,
     double? sparkDelta,
+    bool isFirstPeriod,
     String period,
   ) {
     final hasSpark = sparkSpots.length >= 2;
@@ -221,14 +226,57 @@ class SalesScreen extends StatelessWidget {
               ],
             ],
           ),
-          if (sparkDelta != null) ...[
+          if (sparkDelta != null || isFirstPeriod) ...[
             const SizedBox(height: 10),
-            _changeBadge(sparkDelta, isDark, period: period),
+            if (isFirstPeriod)
+              _newPeriodBadge(isDark, period: period)
+            else
+              _changeBadge(sparkDelta!, isDark, period: period),
           ],
         ],
       ),
     );
-  }  // Delta pill — trend arrow + change vs the equivalent previous window.
+  }
+
+  // First period with revenue and nothing before it: there is no baseline to
+  // compare against, so say "New" instead of inventing a +100% change.
+  Widget _newPeriodBadge(bool isDark, {required String period}) {
+    final color = isDark ? AppColors.darkPrimary : AppColors.success;
+    final bg = isDark
+        ? AppColors.success.withValues(alpha: 0.15)
+        : AppColors.successLight;
+    final note = switch (period) {
+      'today' => 'today',
+      'week' => 'this week',
+      'month' => 'this month',
+      _ => 'this period',
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome, size: 12, color: color),
+          const SizedBox(width: 3),
+          Text(
+            'New $note',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Delta pill — trend arrow + change vs the equivalent previous window.
   // Neutral (grey, flat icon) when the change is exactly 0%.
   Widget _changeBadge(double deltaPct, bool isDark, {required String period}) {
     final neutral = deltaPct == 0;

@@ -45,6 +45,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen>
     with SingleTickerProviderStateMixin {
   _DateRange _selectedRange = _DateRange.all;
+  bool _rangeInitialised = false;
   bool _isRefreshing = false;
 
   // Index of the highlighted Sales-by-Category ring segment (null = idle).
@@ -62,6 +63,42 @@ class _DashboardScreenState extends State<DashboardScreen>
   );
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_rangeInitialised) return;
+    _rangeInitialised = true;
+    // Pick the default window from the data before the first build.
+    _selectedRange = _defaultRange(context);
+  }
+
+  /// The range that fits the data. A 30-day default draws a flat line for
+  /// weeks and then one spike at the right edge whenever every order is
+  /// recent, so start at the smallest preset that covers the orders.
+  _DateRange _defaultRange(BuildContext context) {
+    final orders = context.read<OrdersProvider>().allOrders;
+    if (orders.isEmpty) return _DateRange.week;
+    var oldest = orders.first.createdAt;
+    var newest = oldest;
+    for (final order in orders) {
+      if (order.createdAt.isBefore(oldest)) oldest = order.createdAt;
+      if (order.createdAt.isAfter(newest)) newest = order.createdAt;
+    }
+    final spanDays = newest.difference(oldest).inDays + 1;
+    if (spanDays <= 7) return _DateRange.week;
+    if (spanDays <= 14) return _DateRange.twoWeeks;
+    return _DateRange.month;
+  }
+
+  /// Step for a count axis: 1/2/5 then ×10, so labels read 0/5/10 instead of
+  /// the odd numbers a converted currency gridline produces.
+  static int _niceCountStep(int target) {
+    for (final step in const [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]) {
+      if (step >= target) return step;
+    }
+    return 1000;
+  }
+
+  @override
   void dispose() {
     _ringFocus.dispose();
     super.dispose();
@@ -72,8 +109,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   // SalesProvider): the same orders the Sales and Orders pages render, so
   // the three pages can never disagree.
 
-  /// Sales Overview series for the selected range. 'All' and '30 Days'
-  /// both show the full 30-day window — the demo data never spans more.
+  /// Sales Overview series for the selected range. The default comes from
+  /// [_defaultRange] — the smallest preset the orders actually span — while
+  /// 'All' still shows the full 30-day window.
   List<DailyPoint> _overviewSeries(SalesProvider sales) {
     final days = switch (_selectedRange) {
       _DateRange.week => 7,
@@ -272,13 +310,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     final summary = sales.allTimeSummary;
     // Month-over-month revenue trend from the same completed records.
     final delta = sales.revenueDelta('month');
+    // A month with no previous revenue is "New", never "+100.0% vs last
+    // month": there is no baseline to compare against yet.
+    final isFirstMonth = sales.revenueIsFirstPeriod('month');
+    final hasDelta = delta != null && delta != 0;
     final primary = _StatCard(
       title: 'Total Revenue',
       value: formatCurrency(summary.totalSales),
-      change: (delta == null || delta == 0)
-          ? null
-          : '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)}%',
-      changeNote: 'vs last month',
+      change: hasDelta
+          ? '${delta > 0 ? '+' : ''}${delta.toStringAsFixed(1)}%'
+          : (isFirstMonth ? 'New' : null),
+      changeNote:
+          hasDelta ? 'vs last month' : (isFirstMonth ? 'this month' : null),
     );
     // Every trend pill names its period — "+3" over what? Counts with no
     // honest comparison source (product/rating history) carry none.
@@ -445,6 +488,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   // flips to the red down-arrow treatment instead of lying green.
   Widget _changeBadge(String change, bool isDark, {String? note, bool isSmall = false}) {
     final isDown = change.startsWith('-');
+    // "New" is not a trend: an up-arrow would claim growth that has no
+    // baseline, so it gets a neutral sparkle instead.
+    final isNew = change == 'New';
+    final icon = isNew
+        ? Icons.auto_awesome
+        : (isDown ? Icons.trending_down : Icons.trending_up);
     final color = isDown
         ? AppColors.error
         : (isDark ? AppColors.darkPrimary : AppColors.success);
@@ -463,8 +512,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(isDown ? Icons.trending_down : Icons.trending_up,
-              size: isSmall ? 10 : 12, color: color),
+          Icon(icon, size: isSmall ? 10 : 12, color: color),
           const SizedBox(width: 3),
           Text(
             note == null ? change : '$change $note',
@@ -657,14 +705,20 @@ class _DashboardScreenState extends State<DashboardScreen>
     final axisMaxY =
         ((axisTop / axisStep).ceil() * axisStep).clamp(axisStep, double.infinity);
 
-    // Orders get their OWN axis (counts): a 10-based step ≈ top/3 so the
-    // right-hand labels are clean numbers (20/40/60 for this data) sitting
-    // on the same gridlines as the ₦ ticks. Reading counts off the sales
-    // axis was misleading — ₦ and items are different units.
-    var axisOrdersStep = ((maxOrders * 1.15 / 3 / 10).ceil()) * 10;
-    if (axisOrdersStep < 10) axisOrdersStep = 10;
-    final axisOrdersMax = ((maxOrders * 1.15 / axisOrdersStep).ceil()) *
-        axisOrdersStep;
+    // Orders get their OWN axis (counts). Round steps only: a step ≈ top/3
+    // snapped to 1/2/5×10ᵏ gives 0/5/10 for this data, instead of the odd
+    // values you get by converting ₦ gridlines (10, 7, 3). Reading counts
+    // off the sales axis would be misleading — ₦ and items are different units.
+    final ordersTarget = maxOrders <= 0 ? 1 : (maxOrders * 1.15 / 3).ceil();
+    final axisOrdersStep = _niceCountStep(ordersTarget);
+    final axisOrdersMax = maxOrders <= 0
+        ? 0
+        : ((maxOrders * 1.15) / axisOrdersStep).ceil() * axisOrdersStep;
+    // ₦-space gap for exactly ONE count tick: the right axis lives in the
+    // chart's ₦ coordinates, so its labels must be placed this way.
+    final ordersTickInterval = (axisOrdersMax <= 0 || axisMaxY <= 0)
+        ? axisStep
+        : axisMaxY * axisOrdersStep / axisOrdersMax;
 
     return GrowboxCard(
       child: Column(
@@ -796,12 +850,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                   rightTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 32,
-                      interval: axisStep,
+                      // Gutter wide enough for two digits, so the label can
+                      // never crowd the line's end point.
+                      reservedSize: 36,
+                      interval: ordersTickInterval,
                       getTitlesWidget: (value, meta) {
-                        if (value == 0) return const Text('');
                         final count =
                             (value / axisMaxY * axisOrdersMax).round();
+                        // Round count ticks only (0/5/10); a value that is not
+                        // an exact multiple of the step stays blank.
+                        if (count % axisOrdersStep != 0) return const Text('');
                         return Text(
                           count.toString(),
                           style: TextStyle(
@@ -1680,16 +1738,25 @@ class _RatingGauge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+    // The gauge has a fixed design size, but its label scales with the user's
+    // text size: at 2.0x "4.8/5" outgrew the 72×36 bowl and overlapped the
+    // arc. Scale the box (and the arc stroke) with the text so the label
+    // always sits inside it.
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
     return SizedBox(
-      width: 72,
-      height: 36,
+      width: 72 * textScale,
+      height: 36 * textScale,
       child: Stack(
         alignment: Alignment.bottomCenter,
+        // The arc's stroke is centred on the box edge, so its round caps bleed
+        // a few px past it; without this the top of the arc gets chopped off.
+        clipBehavior: Clip.none,
         children: [
           Positioned.fill(
             child: CustomPaint(
               painter: _ArcGaugePainter(
                 progress: progress,
+                strokeWidth: 7 * textScale,
                 trackColor: isDark ? AppColors.darkBorder : AppColors.borderLight,
                 valueColor: AppColors.primary,
               ),
@@ -1734,15 +1801,17 @@ class _ArcGaugePainter extends CustomPainter {
     required this.progress,
     required this.trackColor,
     required this.valueColor,
+    this.strokeWidth = 7,
   });
 
   final double progress;
   final Color trackColor;
   final Color valueColor;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 7.0;
+    final stroke = strokeWidth;
     final rect = Rect.fromCircle(
       center: Offset(size.width / 2, size.height - stroke / 2),
       radius: size.width / 2 - stroke / 2,
@@ -1810,8 +1879,11 @@ class _RingDonutPainter extends CustomPainter {
     required this.isDark,
   });
 
-  /// Percent → degrees after subtracting the fixed gaps.
-  static double sweepScale(int count) => (360 - gapDegrees * count) / 360;
+  /// Percent → degrees after subtracting the fixed gaps. A lone segment must
+  /// still close the ring: with count == 1 the gap would leave a visible bite
+  /// in a 100% category and it would read as a broken 96% arc.
+  static double sweepScale(int count) =>
+      count <= 1 ? 1.0 : (360 - gapDegrees * count) / 360;
 
   @override
   void paint(Canvas canvas, Size size) {
