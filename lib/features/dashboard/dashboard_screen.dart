@@ -285,8 +285,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final secondary = [
       _StatCard(title: 'Orders', value: '${ordersProvider.totalCount}'),
       _StatCard(title: 'Products', value: '$productsCount'),
-      // Rating has no order-data source — the one kept display metric.
-      _StatCard(title: 'Rating', value: '4.8', change: '+0.2', changeNote: 'this month'),
+      // Rating has no per-order data source, and the old "+0.2 this month"
+      // had nothing behind it, so the score carries no trend pill.
+      _StatCard(title: 'Rating', value: '4.8'),
     ];
 
     return LayoutBuilder(
@@ -681,12 +682,16 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          // Wrap, not Row: at 320px the two legend dots plus the range
+          // dropdown need ~221px inside a 191px card, so it drops a line.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               _buildLegendDot(AppColors.primary, 'Sales', isDark),
-              const SizedBox(width: 12),
               _buildLegendDot(AppColors.brandOrange, 'Orders', isDark),
-              const Spacer(),
               Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
@@ -1356,9 +1361,15 @@ class _DashboardScreenState extends State<DashboardScreen>
       children: [
         Row(
           children: [
-            Text(
-              'Recent Orders',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
+            // Flexible: at 320px the title plus the View All button is 23px
+            // wider than the row, so the title yields instead of overflowing.
+            Flexible(
+              child: Text(
+                'Recent Orders',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
+              ),
             ),
             const Spacer(),
             TextButton(onPressed: () => context.go('/orders'), child: const Text('View All')),

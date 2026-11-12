@@ -54,6 +54,9 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Widget _buildHeader(BuildContext context, bool isDark, Order order) {
+    // Phones put the status pill on its own line under the title: sharing a
+    // row forced the order id to ellipsize ("Order #ORD-…").
+    final isPhone = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
     return Row(
       children: [
         IconButton(
@@ -85,11 +88,17 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppDimensions.md),
-                  GrowboxStatusPill(status: order.status.name),
+                  if (!isPhone) ...[
+                    const SizedBox(width: AppDimensions.md),
+                    GrowboxStatusPill(status: order.status.name),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
+              if (isPhone) ...[
+                GrowboxStatusPill(status: order.status.name),
+                const SizedBox(height: AppDimensions.sm),
+              ],
               Text(
                 'Placed ${_formatDate(order.createdAt)}',
                 style: TextStyle(
@@ -593,7 +602,11 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    // dd/mm/yyyy through the shared formatter, so a Nigerian reader never has
+    // to guess whether "11/12" means November or December.
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '${formatDateDdMmYyyy(date)} at $hour:$minute';
   }
 
   Future<void> _acceptOrder(BuildContext context, Order order) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../data/models/notification.dart';
 import '../../data/mock/mock_images.dart';
@@ -76,56 +77,58 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   // ── HEADER ──
   Widget _buildHeader(BuildContext context, NotificationsProvider provider, bool isDark) {
+    // The top bar already names this page. Repeating "Notifications" here put a
+    // 22px title beside the action button, which on a 390px phone wrapped the
+    // title mid-word ("Notification / s"). Only the status line and the action
+    // remain, and the action is icon-only on phones.
+    final isPhone = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
+    final hasUnread = provider.unreadCount > 0;
+
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Notifications',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                ),
-              ),
-              if (provider.unreadCount > 0) ...[
-                const SizedBox(height: 2),
-                Text(
-                  '${provider.unreadCount} unread',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        if (provider.unreadCount > 0)
-          TextButton.icon(
-            onPressed: () => _showMarkAllReadDialog(context, provider),
-            icon: const Icon(Icons.done_all, size: 18),
-            label: const Text('Mark all read'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            hasUnread ? '${provider.unreadCount} unread' : 'All caught up',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w500,
             ),
           ),
+        ),
+        if (hasUnread)
+          isPhone
+              ? IconButton(
+                  onPressed: () => _showMarkAllReadDialog(context, provider),
+                  icon: const Icon(Icons.done_all, size: 20),
+                  tooltip: 'Mark all read',
+                  color: AppColors.primary,
+                )
+              : TextButton.icon(
+                  onPressed: () => _showMarkAllReadDialog(context, provider),
+                  icon: const Icon(Icons.done_all, size: 18),
+                  label: const Text('Mark all read'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
       ],
     );
   }
 
   // ── STATS ROW ──
   Widget _buildStatsRow(NotificationsProvider provider, bool isDark) {
-    return Row(
+    // Wrap, not Row: the three chips are ~300px together and a 320px phone
+    // leaves ~272px, so a Row overflowed. Wrapping keeps them whole.
+    return Wrap(
+      spacing: AppDimensions.sm,
+      runSpacing: AppDimensions.sm,
       children: [
         _buildStatChip(icon: Icons.notifications_none, label: '${provider.notifications.length} Total', color: AppColors.info, bgColor: AppColors.infoLight),
-        const SizedBox(width: AppDimensions.sm),
         _buildStatChip(icon: Icons.mark_email_unread_outlined, label: '${provider.unreadCount} Unread', color: AppColors.primary, bgColor: AppColors.primarySurface),
-        const SizedBox(width: AppDimensions.sm),
         _buildStatChip(icon: Icons.mark_email_read_outlined, label: '${provider.notifications.length - provider.unreadCount} Read', color: AppColors.textTertiary, bgColor: AppColors.surfaceVariant),
       ],
     );
@@ -479,7 +482,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays == 1) return 'Yesterday';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dateTime.month}/${dateTime.day}/${dateTime.year}';
+    // dd/mm/yyyy: month-first read as April 8th for a Nigerian vendor.
+    return formatDateDdMmYyyy(dateTime);
   }
 
   String _formatFullDate(DateTime dateTime) {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../app/providers/auth_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../shared/widgets/growbox_card.dart';
@@ -41,11 +43,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _fullNameController = TextEditingController(text: 'Oluwaseun Adebayo');
   final _emailController = TextEditingController(text: 'adebayo@greenharvest.com');
   final _phoneController = TextEditingController(text: '+234 801 234 5678');
-  final _businessNameController = TextEditingController(text: 'Green Harvest Farms');
+  /// Seeded from the signed-in vendor in initState — the business name is
+  /// account data, not form copy.
+  late final TextEditingController _businessNameController;
   final _businessEmailController = TextEditingController(text: 'contact@greenharvest.com');
   final _businessPhoneController = TextEditingController(text: '+234 801 234 5678');
   final _businessAddressController = TextEditingController(text: 'Ogun State, Nigeria');
   final _storeTypeController = TextEditingController(text: 'Farm Fresh');
+
+  @override
+  void initState() {
+    super.initState();
+    // One source for the business name: the account. The form, the profile
+    // card and the payout holder used to hardcode "Green Harvest Farms" while
+    // the sidebar read AuthProvider, so the two disagreed on screen.
+    _businessNameController = TextEditingController(
+      text: context.read<AuthProvider>().vendorName ?? '',
+    );
+  }
+
+  /// The account's business name, with the same neutral placeholder the
+  /// sidebar shows when nobody is signed in.
+  String get _vendorDisplayName {
+    final name = _businessNameController.text.trim();
+    return name.isEmpty ? 'Your store' : name;
+  }
 
   @override
   void dispose() {
@@ -345,7 +367,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _businessNameController.text,
+                      _vendorDisplayName,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -693,7 +715,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildPayoutInfo(
             isDark: isDark,
             label: 'Account Name',
-            value: 'Green Harvest Farms',
+            // The payout holder is the business, so it takes the account's
+            // name instead of a second hardcoded one.
+            value: _vendorDisplayName,
           ),
           const SizedBox(height: AppDimensions.xl),
           Align(

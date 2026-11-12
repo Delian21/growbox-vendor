@@ -94,12 +94,12 @@ void main() {
       (tester) async {
     await pumpOrders(tester);
 
-    // The seed data has exactly two pending orders → two checkboxes.
+    // Two pending rows plus the header select-all at index 0.
     final checkboxes = find.byType(Checkbox);
-    expect(checkboxes, findsNWidgets(2));
-    await tester.tap(checkboxes.at(0));
-    await tester.pumpAndSettle();
+    expect(checkboxes, findsNWidgets(3));
     await tester.tap(checkboxes.at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(checkboxes.at(2));
     await tester.pumpAndSettle();
 
     expect(find.text('2 pending orders selected'), findsOneWidget);
@@ -118,7 +118,8 @@ void main() {
   testWidgets('Clear empties the selection without accepting', (tester) async {
     await pumpOrders(tester);
 
-    await tester.tap(find.byType(Checkbox).first);
+    // Index 0 is the header select-all; tick one individual pending row.
+    await tester.tap(find.byType(Checkbox).at(1));
     await tester.pumpAndSettle();
     expect(find.text('1 pending order selected'), findsOneWidget);
 
@@ -126,6 +127,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 pending order selected'), findsNothing);
     expect(find.text('Pending (2)'), findsOneWidget);
+  });
+
+  testWidgets('select-all ticks every pending row, Reject selected cancels them',
+      (tester) async {
+    await pumpOrders(tester);
+
+    await tester.tap(find.byType(Checkbox).first);
+    await tester.pumpAndSettle();
+    expect(find.text('2 pending orders selected'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(GrowboxButton, 'Reject selected (2)'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 orders rejected'), findsOneWidget);
+    expect(find.text('Pending (0)'), findsOneWidget);
+    // The two rejected plus the seeded cancelled #ORD-005.
+    expect(find.text('Cancelled (3)'), findsOneWidget);
+    // Selection cleared and the select-all is gone with the pending rows.
+    expect(find.byType(Checkbox), findsNothing);
+    expect(find.text('2 pending orders selected'), findsNothing);
   });
 
   // ── 3. Persistence ───────────────────────────────────────────────────

@@ -11,6 +11,15 @@ String formatCurrency(double amount) {
   return '\u20A6${buffer.toString()}';
 }
 
+/// dd/mm/yyyy — the order Nigerian vendors read dates in. Shared so every page
+/// that shows a calendar date renders it the same way, zero-padded, so
+/// "04/03/2026" can never be mistaken for the 3rd of April.
+String formatDateDdMmYyyy(DateTime date) {
+  final day = date.day.toString().padLeft(2, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  return '$day/$month/${date.year}';
+}
+
 /// Relative time for order rows — "Just now" / "2 min ago" /
 /// "3 hours ago" / "2 days ago". Shared by the dashboard's Recent Orders
 /// and the Orders table so both pages phrase the same instant alike.

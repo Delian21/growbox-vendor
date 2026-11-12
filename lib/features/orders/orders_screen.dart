@@ -111,6 +111,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildOrdersTable(BuildContext context, bool isDark, List<Order> orders) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
+    // Selection only ever covers pending rows, so "all" means all pending
+    // rows in the view the vendor is looking at.
+    final pending = _pendingInView(orders);
+    final allSelected =
+        pending.isNotEmpty && _selectedPending.length == pending.length;
 
     return GrowboxCard(
       padding: EdgeInsets.zero,
@@ -119,16 +124,55 @@ class _OrdersScreenState extends State<OrdersScreen> {
         children: [
           // Header row mirrors the dashboard's Recent Orders table style.
           if (!isMobile) ...[
-            _buildTableHeader(context, isDark),
+            _buildTableHeader(context, isDark, orders),
             GrowboxTable.headerDivider(isDark),
           ],
+          // Phones have no table header, so the select-all lives here.
+          if (isMobile && pending.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimensions.md,
+                AppDimensions.sm,
+                AppDimensions.md,
+                0,
+              ),
+              child: Row(
+                children: [
+                  Semantics(
+                    container: true,
+                    label: 'Select all pending orders',
+                    child: Checkbox(
+                      value: allSelected,
+                      onChanged: (v) => _toggleSelectedMany(pending, v),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: AppDimensions.sm),
+                  Text(
+                    'Select all pending (${pending.length})',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ...orders.map((order) => _buildOrderRow(context, order, isDark)),
         ],
       ),
     );
   }
 
-  Widget _buildTableHeader(BuildContext context, bool isDark) {
+  Widget _buildTableHeader(
+      BuildContext context, bool isDark, List<Order> orders) {
+    final pending = _pendingInView(orders);
+    final allSelected =
+        pending.isNotEmpty && _selectedPending.length == pending.length;
     return GrowboxTable.headerRow(
       children: [
         // Same flex/fixed widths as _buildOrderRow's desktop branch.
@@ -140,9 +184,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
         SizedBox(width: _timeColWidth, child: GrowboxTable.headerCell('Time', isDark)),
         SizedBox(
           width: _actionsColWidth,
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: GrowboxTable.headerCell('Actions', isDark),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Select-all exists only while there is something to select,
+              // so an empty pending view never shows a dead control.
+              if (pending.isNotEmpty) ...[
+                Semantics(
+                  container: true,
+                  label: 'Select all pending orders',
+                  child: Checkbox(
+                    value: allSelected,
+                    onChanged: (v) => _toggleSelectedMany(pending, v),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              GrowboxTable.headerCell('Actions', isDark),
+            ],
           ),
         ),
       ],
@@ -197,12 +258,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
               if (order.status == OrderStatus.pending) ...[
                 const SizedBox(height: AppDimensions.sm),                  Row(
                     children: [
-                      // Bulk-select tick — pending orders only.
-                      Checkbox(
-                        value: _selectedPending.contains(order.id),
-                        onChanged: (v) => _toggleSelected(order.id, v),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
+                      // Bulk-select tick — pending orders only. The label
+                      // gives the control a name for screen readers.
+                      Semantics(
+                        container: true,
+                        label: 'Select order ${order.id}',
+                        child: Checkbox(
+                          value: _selectedPending.contains(order.id),
+                          onChanged: (v) => _toggleSelected(order.id, v),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
                       ),
                       const SizedBox(width: AppDimensions.sm),
                       Expanded(
@@ -282,12 +348,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ? Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        // Bulk-select tick — pending orders only.
-                        Checkbox(
-                          value: _selectedPending.contains(order.id),
-                          onChanged: (v) => _toggleSelected(order.id, v),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
+                        // Bulk-select tick — pending orders only, labelled for
+                        // screen readers.
+                        Semantics(
+                          container: true,
+                          label: 'Select order ${order.id}',
+                          child: Checkbox(
+                            value: _selectedPending.contains(order.id),
+                            onChanged: (v) => _toggleSelected(order.id, v),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         // Accept stays the solid, primary action — the same
@@ -352,39 +423,100 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
   }
 
+  /// The pending orders the table is currently showing — the only rows that
+  /// can be bulk-selected.
+  List<Order> _pendingInView(List<Order> orders) =>
+      orders.where((o) => o.status == OrderStatus.pending).toList();
+
+  void _toggleSelectedMany(List<Order> pending, bool? selected) {
+    final ids = pending.map((o) => o.id).toSet();
+    setState(() {
+      if (selected == true) {
+        _selectedPending.addAll(ids);
+      } else {
+        _selectedPending.removeAll(ids);
+      }
+    });
+  }
+
   // The selection bar shown above the table while ticked orders exist.
   Widget _buildBulkBar(BuildContext context, bool isDark) {
+    final count = _selectedPending.length;
     return GrowboxCard(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.lg,
         vertical: AppDimensions.sm,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.checklist, size: 18, color: AppColors.primary),
-          const SizedBox(width: AppDimensions.sm),
-          Text(
-            '${_selectedPending.length} pending order${_selectedPending.length == 1 ? '' : 's'} selected',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-            ),
+          Row(
+            children: [
+              const Icon(Icons.checklist, size: 18, color: AppColors.primary),
+              const SizedBox(width: AppDimensions.sm),
+              Expanded(
+                child: Text(
+                  '$count pending order${count == 1 ? '' : 's'} selected',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color:
+                        isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(_selectedPending.clear),
+                child: const Text('Clear'),
+              ),
+            ],
           ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => setState(() => _selectedPending.clear()),
-            child: const Text('Clear'),
-          ),
-          const SizedBox(width: AppDimensions.sm),
-          GrowboxButton(
-            label: 'Accept selected (${_selectedPending.length})',
-            icon: Icons.check_circle_outline,
-            onPressed: () => _acceptSelected(context),
+          const SizedBox(height: AppDimensions.xs),
+          // Both bulk actions on their own row: sharing one line with the
+          // count overflowed at 320px.
+          Wrap(
+            spacing: AppDimensions.sm,
+            runSpacing: AppDimensions.sm,
+            children: [
+              GrowboxButton(
+                label: 'Accept selected ($count)',
+                icon: Icons.check_circle_outline,
+                onPressed: () => _acceptSelected(context),
+              ),
+              GrowboxButton(
+                label: 'Reject selected ($count)',
+                icon: Icons.cancel_outlined,
+                variant: GrowboxButtonVariant.dangerOutline,
+                onPressed: () => _rejectSelected(context),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  /// Bulk reject. The single-row Reject asks for a reason; a bulk reject has
+  /// no single reason to attach, so it cancels the selected pending orders and
+  /// reports how many went through.
+  Future<void> _rejectSelected(BuildContext context) async {
+    final provider = context.read<OrdersProvider>();
+    final ids = _selectedPending.toList();
+    var rejected = 0;
+    for (final id in ids) {
+      final ok = await provider.updateOrderStatus(id, OrderStatus.cancelled);
+      if (ok) rejected++;
+    }
+    if (!context.mounted) return;
+    setState(_selectedPending.clear);
+    if (rejected > 0) {
+      SnackbarHelper.showSuccess(
+          context, '$rejected order${rejected == 1 ? '' : 's'} rejected');
+    } else {
+      SnackbarHelper.showError(context, 'No pending orders in the selection');
+    }
   }
 
   Future<void> _acceptSelected(BuildContext context) async {

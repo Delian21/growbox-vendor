@@ -37,7 +37,10 @@ class SalesScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const GrowboxPageHeader(
-            subtitle: 'Revenue, earnings and transactions from completed orders',
+            // The table lists pending transactions too, so the subtitle must
+            // not imply every row is revenue.
+            subtitle:
+                'Revenue from completed orders — pending payments shown, not counted',
           ),
           const SizedBox(height: AppDimensions.lg),
           _buildPeriodFilter(context, isDark),
@@ -702,13 +705,18 @@ class SalesScreen extends StatelessWidget {
                           style: GrowboxTable.strongStyle(isDark),
                         ),
                       const SizedBox(height: 2),
-                      Row(
+                      // Wrap, not Row: at 320px the transaction id plus the
+                      // order link is wider than the card's text column, so
+                      // the link drops to its own line instead of overflowing.
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             txn.id,
                             style: GrowboxTable.metaStyle(isDark),
                           ),
-                          const SizedBox(width: 6),
                           // Order ID links through to the order details.
                           _orderLink(context, txn.orderId, isDark, fontSize: 12),
                         ],
@@ -738,6 +746,19 @@ class SalesScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (!_isCounted(txn)) ...[
+              const SizedBox(height: AppDimensions.xs),
+              Text(
+                'Pending — not counted in totals',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppColors.darkTextTertiary
+                      : AppColors.textTertiary,
+                ),
+              ),
+            ],
           ],
         ),
       );
@@ -784,9 +805,26 @@ class SalesScreen extends StatelessWidget {
           ),
           Expanded(
             flex: 2,
-            child: Text(
-              formatCurrency(txn.totalAmount),
-              style: GrowboxTable.strongStyle(isDark),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formatCurrency(txn.totalAmount),
+                  style: GrowboxTable.strongStyle(isDark),
+                ),
+                if (!_isCounted(txn))
+                  Text(
+                    'Not counted',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? AppColors.darkTextTertiary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+              ],
             ),
           ),
           Container(
@@ -854,6 +892,10 @@ class SalesScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// Only completed transactions feed revenue; pending ones are listed for
+  /// context and labelled so a total can never be misread.
+  bool _isCounted(TransactionRecord txn) => txn.status == 'completed';
 
   String _formatDate(DateTime date) {
     final diff = DateTime.now().difference(date);
