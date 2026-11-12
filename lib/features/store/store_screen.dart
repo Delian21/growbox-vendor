@@ -646,7 +646,10 @@ class StoreScreen extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: AppDimensions.lg),
-                      _buildValidatedField('Store Name', nameController, validator: (v) => v == null || v.isEmpty ? 'Enter store name' : null),
+                      // "Store display name" not "Store Name": this is the
+                      // shopfront label, which may differ from the account's
+                      // business name in Settings.
+                      _buildValidatedField('Store display name', nameController, validator: (v) => v == null || v.isEmpty ? 'Enter store name' : null),
                       const SizedBox(height: AppDimensions.md),
                       _buildValidatedField('Description', descController, maxLines: 3, validator: (v) => v == null || v.isEmpty ? 'Enter description' : null),
                       const SizedBox(height: AppDimensions.md),

@@ -179,4 +179,143 @@ void main() {
         reason: 'the edited name is saved for the next start-up');
     expect(tester.takeException(), isNull);
   });
+
+  // ── Name ownership: only a real rename claims the name ────────────────
+
+  test('saving unrelated fields keeps the account name in charge', () async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = _RenamingAuth();
+    final store = StoreProvider(auth: auth);
+
+    await auth.login('vendor@example.com', 'secret123');
+    expect(store.store.name, 'Farm Fresh Enterprises');
+
+    // The Edit Store sheet always submits the name field; here it is unchanged
+    // and only the description was edited.
+    store.updateStore(
+      name: 'Farm Fresh Enterprises',
+      description: 'Now with cold storage',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('store_name'), isNull,
+        reason: 'an unchanged name is not a rename and must not be saved');
+    expect(store.store.description, 'Now with cold storage');
+
+    // The account name still drives the store name.
+    auth.nextLoginName = 'Green Valley Co';
+    await auth.login('other@example.com', 'secret123');
+    expect(store.store.name, 'Green Valley Co');
+  });
+
+  test('renaming back to the account name keeps the store name pinned',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = _RenamingAuth();
+    final store = StoreProvider(auth: auth);
+    await auth.login('vendor@example.com', 'secret123');
+
+    store.updateStore(name: 'Kaduna Greens');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // Deliberately typing the account's own name is still a store rename.
+    store.updateStore(name: 'Farm Fresh Enterprises');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('store_name'), 'Farm Fresh Enterprises');
+
+    // …so a later account with a different name does not overwrite it.
+    auth.nextLoginName = 'Another Farm Ltd';
+    await auth.login('third@example.com', 'secret123');
+    expect(store.store.name, 'Farm Fresh Enterprises',
+        reason: 'a saved store name stays the vendor\'s own');
+  });
+
+  testWidgets('an unrelated sheet save keeps the store name following the '
+      'account', (tester) async {
+    await tester.runAsync(loadRoboto);
+    SharedPreferences.setMockInitialValues({'theme_mode': 1});
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final auth = _RenamingAuth();
+    final baseProviders = growboxProviders()
+        .where((p) => p is! ChangeNotifierProvider<AuthProvider>)
+        .toList();
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ...baseProviders,
+      ],
+      child: const GrowboxApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    final login = auth.login('vendor@example.com', 'secret123');
+    await tester.pump();
+    await login;
+    await tester.pumpAndSettle();
+
+    appRouter.go('/store');
+    await tester.pumpAndSettle();
+    expect(find.text('Farm Fresh Enterprises'), findsWidgets);
+
+    await tester.tap(find.text('Edit Store'));
+    await tester.pumpAndSettle();
+    expect(find.text('Store display name'), findsOneWidget,
+        reason: 'the field is the shopfront label, not the account name');
+
+    // Edit only the description; the sheet still sends the unchanged name.
+    await tester.enterText(
+        find.byType(TextFormField).at(1), 'Now with cold storage');
+    await tester.dragUntilVisible(find.text('Save Changes'),
+        find.byType(ListView).last, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Changes'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('store_name'), isNull,
+        reason: 'an unrelated save must not claim the name');
+
+    // A different account signing in still drives the store name.
+    auth.nextLoginName = 'Green Valley Co';
+    final relogin = auth.login('other@example.com', 'secret123');
+    await tester.pump();
+    await relogin;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Green Valley Co'), findsWidgets,
+        reason: 'the Store page follows the new account name');
+    expect(find.text('Farm Fresh Enterprises'), findsNothing);
+    final store = Provider.of<StoreProvider>(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+    expect(store.store.name, 'Green Valley Co');
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// AuthProvider whose business name a test can set per login — the real one
+/// always signs in with the same fixture name.
+class _RenamingAuth extends AuthProvider {
+  String? _name;
+
+  /// The business name the next [login] signs in with.
+  String nextLoginName = 'Farm Fresh Enterprises';
+
+  @override
+  String? get vendorName => _name;
+
+  @override
+  Future<bool> login(String email, String password) async {
+    _name = nextLoginName;
+    notifyListeners();
+    return true;
+  }
 }

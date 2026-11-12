@@ -87,10 +87,16 @@ class StoreProvider extends ChangeNotifier {
     String? logoUrl,
     String? bannerUrl,
   }) {
-    // A name typed on the Store page is the store's OWN display name: it is
-    // saved, and the account name never replaces it afterwards.
+    // A name typed on the Store page is the store's OWN display name — but
+    // only when it actually differs from the current one. The Edit Store
+    // sheet always sends every field, so an unrelated save (say a new
+    // description) must not quietly claim the name that the account is still
+    // supplying. Once a real rename has been saved, setting the name back to
+    // the account's value is still the vendor's own choice and stays pinned.
     final ownName = name?.trim();
-    if (ownName != null && ownName.isNotEmpty) {
+    if (ownName != null &&
+        ownName.isNotEmpty &&
+        ownName != _store.name.trim()) {
       _hasOwnName = true;
       _persistName(ownName);
     }
