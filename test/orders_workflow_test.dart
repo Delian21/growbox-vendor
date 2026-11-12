@@ -138,7 +138,14 @@ void main() {
     expect(find.text('2 pending orders selected'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(GrowboxButton, 'Reject selected (2)'));
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    // Bulk reject confirms first, exactly like the single-row Reject.
+    expect(find.text('Reject 2 orders?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Reject all'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 600));
+    }
     await tester.pumpAndSettle();
 
     expect(find.text('2 orders rejected'), findsOneWidget);

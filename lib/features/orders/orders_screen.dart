@@ -33,13 +33,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ordersProvider = context.watch<OrdersProvider>();
     final orders = ordersProvider.orders;
+    final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
 
     // Drop selections whose orders are no longer pending in the current
     // view (accepted elsewhere, rejected, filtered out).
     _selectedPending.removeWhere((id) =>
         !orders.any((o) => o.id == id && o.status == OrderStatus.pending));
 
-    return SingleChildScrollView(
+    final bulkVisible = _selectedPending.isNotEmpty;
+
+    final content = SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,7 +51,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: AppDimensions.lg),
           _buildTabs(context, isDark, ordersProvider),
           const SizedBox(height: AppDimensions.lg),
-          if (_selectedPending.isNotEmpty) ...[
+          // Desktop keeps the bar in the flow, above the table. Phones pin it
+          // as a footer (see below) so it never pushes the list down.
+          if (!isMobile && bulkVisible) ...[
             _buildBulkBar(context, isDark),
             const SizedBox(height: AppDimensions.lg),
           ],
@@ -65,6 +70,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
             _buildOrdersTable(context, isDark, orders),
         ],
       ),
+    );
+
+    if (!isMobile) return content;
+
+    // Pinned selection bar: a footer under the scroll area, so it stays put
+    // while the list scrolls. Its bottom inset clears the floating bottom nav,
+    // and because the scroll view ends where the bar starts, no order row can
+    // end up underneath it.
+    return Column(
+      children: [
+        Expanded(child: content),
+        if (bulkVisible)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppDimensions.xl,
+              right: AppDimensions.xl,
+              top: AppDimensions.sm,
+              bottom: AppDimensions.bottomNavHeight + AppDimensions.sm,
+            ),
+            child: _buildBulkBar(context, isDark, stackActions: true),
+          ),
+      ],
     );
   }
 
@@ -107,7 +134,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // non-pending rows) so nothing shifts when a row has buttons.
   static const double _statusColWidth = 90;
   static const double _timeColWidth = 80;
-  static const double _actionsColWidth = 176;
+  static const double _actionsColWidth = 208;
 
   Widget _buildOrdersTable(BuildContext context, bool isDark, List<Order> orders) {
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
@@ -149,14 +176,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ),
                   const SizedBox(width: AppDimensions.sm),
-                  Text(
-                    'Select all pending (${pending.length})',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.textSecondary,
+                  // Expanded + ellipsis: at 320px and 1.5–2.0× text the label
+                  // cannot be intrinsic-width without overflowing the row.
+                  Expanded(
+                    child: Text(
+                      'Select all pending (${pending.length})',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.textSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -190,17 +223,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
               // Select-all exists only while there is something to select,
               // so an empty pending view never shows a dead control.
               if (pending.isNotEmpty) ...[
-                Semantics(
-                  container: true,
-                  label: 'Select all pending orders',
-                  child: Checkbox(
-                    value: allSelected,
-                    onChanged: (v) => _toggleSelectedMany(pending, v),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+                // Visible label beside the tick — the checkbox was only named
+                // for screen readers. Flexible keeps it from pushing the
+                // Actions heading out of the cell at large text scales.
+                Flexible(
+                  child: Semantics(
+                    container: true,
+                    label: 'Select all pending orders',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: allSelected,
+                          onChanged: (v) => _toggleSelectedMany(pending, v),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Select all',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GrowboxTable.headerStyle(isDark),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppDimensions.sm),
               ],
               GrowboxTable.headerCell('Actions', isDark),
             ],
@@ -248,11 +300,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
               Text(itemsText, style: GrowboxTable.secondaryStyle(isDark), maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: AppDimensions.sm),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
-                  const Spacer(),
+                  Flexible(
+                    child: Text(formatCurrency(order.totalAmount),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GrowboxTable.strongStyle(isDark)),
+                  ),
+                  const SizedBox(width: AppDimensions.sm),
                   // Time — secondary text (same as the dashboard table) for contrast.
-                  Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
+                  Flexible(
+                    child: Text(timeAgo(order.createdAt),
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        overflow: TextOverflow.ellipsis,
+                        style: GrowboxTable.metaStyle(isDark)),
+                  ),
                 ],
               ),
               if (order.status == OrderStatus.pending) ...[
@@ -439,9 +503,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
   }
 
-  // The selection bar shown above the table while ticked orders exist.
-  Widget _buildBulkBar(BuildContext context, bool isDark) {
+  // The selection bar shown while ticked orders exist: above the table on
+  // desktop, pinned above the dock on phones.
+  Widget _buildBulkBar(BuildContext context, bool isDark,
+      {bool stackActions = false}) {
     final count = _selectedPending.length;
+    final actions = [
+      GrowboxButton(
+        label: 'Accept selected ($count)',
+        icon: Icons.check_circle_outline,
+        isExpanded: stackActions,
+        onPressed: () => _acceptSelected(context),
+      ),
+      GrowboxButton(
+        label: 'Reject selected ($count)',
+        icon: Icons.cancel_outlined,
+        variant: GrowboxButtonVariant.dangerOutline,
+        isExpanded: stackActions,
+        onPressed: () => _rejectSelected(context),
+      ),
+    ];
     return GrowboxCard(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.lg,
@@ -456,8 +537,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
               const SizedBox(width: AppDimensions.sm),
               Expanded(
                 child: Text(
-                  '$count pending order${count == 1 ? '' : 's'} selected',
-                  maxLines: 1,
+                  // The pinned phone bar is narrow: the compact wording fits
+                  // where "pending" pushed the count to a one-letter ellipsis.
+                  stackActions
+                      ? '$count order${count == 1 ? '' : 's'} selected'
+                      : '$count pending order${count == 1 ? '' : 's'} selected',
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
@@ -467,46 +552,68 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: () => setState(_selectedPending.clear),
-                child: const Text('Clear'),
-              ),
+              if (stackActions)
+                // Icon-only on the pinned bar: the word "Clear" took the room
+                // the count needs at 320px / 2.0×.
+                IconButton(
+                  onPressed: () => setState(_selectedPending.clear),
+                  tooltip: 'Clear selection',
+                  icon: const Icon(Icons.close, size: 18),
+                  visualDensity: VisualDensity.compact,
+                )
+              else
+                TextButton(
+                  onPressed: () => setState(_selectedPending.clear),
+                  child: const Text('Clear'),
+                ),
             ],
           ),
           const SizedBox(height: AppDimensions.xs),
-          // Both bulk actions on their own row: sharing one line with the
-          // count overflowed at 320px.
-          Wrap(
-            spacing: AppDimensions.sm,
-            runSpacing: AppDimensions.sm,
-            children: [
-              GrowboxButton(
-                label: 'Accept selected ($count)',
-                icon: Icons.check_circle_outline,
-                onPressed: () => _acceptSelected(context),
-              ),
-              GrowboxButton(
-                label: 'Reject selected ($count)',
-                icon: Icons.cancel_outlined,
-                variant: GrowboxButtonVariant.dangerOutline,
-                onPressed: () => _rejectSelected(context),
-              ),
-            ],
-          ),
+          // Phones stack the actions full-width: at 320px and at 1.5–2.0× text
+          // two intrinsic-width buttons cannot both fit on one line. Desktop
+          // keeps them side by side with a Wrap.
+          if (stackActions)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                actions.first,
+                const SizedBox(height: AppDimensions.sm),
+                actions.last,
+              ],
+            )
+          else
+            Wrap(
+              spacing: AppDimensions.sm,
+              runSpacing: AppDimensions.sm,
+              children: actions,
+            ),
         ],
       ),
     );
   }
 
-  /// Bulk reject. The single-row Reject asks for a reason; a bulk reject has
-  /// no single reason to attach, so it cancels the selected pending orders and
-  /// reports how many went through.
+  /// Bulk reject. Irreversible, so it confirms exactly like the single-row
+  /// Reject — count in the title, "this cannot be undone", optional reason —
+  /// and applies one reason to every order in the selection. Backing out of
+  /// the dialog changes nothing.
   Future<void> _rejectSelected(BuildContext context) async {
     final provider = context.read<OrdersProvider>();
     final ids = _selectedPending.toList();
+    if (ids.isEmpty) return;
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => _RejectOrderDialog.bulk(ids.length),
+    );
+    if (reason == null || !context.mounted) return;
+
     var rejected = 0;
     for (final id in ids) {
-      final ok = await provider.updateOrderStatus(id, OrderStatus.cancelled);
+      final ok = await provider.updateOrderStatus(
+        id,
+        OrderStatus.cancelled,
+        notes: reason.isEmpty ? null : reason,
+      );
       if (ok) rejected++;
     }
     if (!context.mounted) return;
@@ -537,7 +644,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     // skipping it still rejects) and null when the vendor keeps the order.
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => _RejectOrderDialog(order: order),
+      builder: (dialogContext) => _RejectOrderDialog.order(order),
     );
 
     if (reason != null && context.mounted) {
@@ -559,16 +666,23 @@ class _TabItem {
   _TabItem({required this.label, required this.status});
 }
 
-/// Confirmation dialog for rejecting an order, with an optional reason.
+/// Confirmation dialog for rejecting one order or a whole selection, with an
+/// optional reason that applies to every order it covers.
 ///
 /// It owns its [TextEditingController] so disposal happens in
 /// [State.dispose] — after the dialog's exit animation finishes — instead
 /// of the moment `showDialog` completes, which would crash the still-
 /// animating TextField.
 class _RejectOrderDialog extends StatefulWidget {
-  final Order order;
+  /// The single order being rejected; null for a bulk reject.
+  final Order? order;
 
-  const _RejectOrderDialog({required this.order});
+  /// How many orders a bulk reject covers (1 for a single order).
+  final int count;
+
+  const _RejectOrderDialog.order(Order this.order) : count = 1;
+
+  const _RejectOrderDialog.bulk(this.count) : order = null;
 
   @override
   State<_RejectOrderDialog> createState() => _RejectOrderDialogState();
@@ -585,13 +699,16 @@ class _RejectOrderDialogState extends State<_RejectOrderDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     return AlertDialog(
-      title: const Text('Reject Order'),
+      title: Text(order == null ? 'Reject ${widget.count} orders?' : 'Reject Order'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Reject order ${widget.order.id} from ${widget.order.customerName}?\n\nThis action cannot be undone and the customer will be notified.'),
+          Text(order == null
+              ? 'Reject ${widget.count} selected orders?\n\nThis action cannot be undone and the customers will be notified.'
+              : 'Reject order ${order.id} from ${order.customerName}?\n\nThis action cannot be undone and the customer will be notified.'),
           const SizedBox(height: AppDimensions.lg),
           // Optional: a short reason the customer can be told; skipping it
           // still rejects the order.
@@ -616,7 +733,10 @@ class _RejectOrderDialogState extends State<_RejectOrderDialog> {
         TextButton(
           onPressed: () =>
               Navigator.pop(context, _reasonController.text.trim()),
-          child: const Text('Reject Order', style: TextStyle(color: AppColors.error)),
+          child: Text(
+            order == null ? 'Reject all' : 'Reject Order',
+            style: const TextStyle(color: AppColors.error),
+          ),
         ),
       ],
     );
