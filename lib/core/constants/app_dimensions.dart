@@ -24,6 +24,11 @@ class AppDimensions {
   // ── Header ──
   static const double headerHeight = 64;
 
+  // ── Mobile dock ──
+  /// Height of the floating bottom nav that overlays page content on phones.
+  /// Pages with their own FAB must lift it clear of this.
+  static const double bottomNavHeight = 64;
+
   // ── Card ──
   static const double cardPadding = 24;
 

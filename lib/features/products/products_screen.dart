@@ -75,21 +75,31 @@ class _ProductsScreenState extends State<ProductsScreen> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.background,
       floatingActionButton: isMobile
-          ? FloatingActionButton.extended(
-              onPressed: () => _showAddProductSheet(context),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Product'),
+          // The floating dock overlays the page bottom, so the FAB has to sit
+          // above it rather than behind it: dock height + the scaffold's own
+          // 16px FAB margin.
+          ? Padding(
+              padding: const EdgeInsets.only(
+                bottom: AppDimensions.bottomNavHeight,
+              ),
+              child: FloatingActionButton.extended(
+                onPressed: () => _showAddProductSheet(context),
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Product'),
+              ),
             )
           : null,
       body: SingleChildScrollView(
         // Mobile: extra bottom room so the last grid row always scrolls
         // clear of the FAB (~56px tall + the scaffold's 16px margin).
+        // Mobile bottom room clears the last card of BOTH the FAB (56px + its
+        // 16px margin) and the dock it now sits above (64px).
         padding: isMobile
             ? const EdgeInsets.fromLTRB(
                 AppDimensions.xl, AppDimensions.xl, AppDimensions.xl,
-                AppDimensions.xl + 72)
+                AppDimensions.xl + 72 + AppDimensions.bottomNavHeight)
             : const EdgeInsets.all(AppDimensions.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,7 +311,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // 78px content block inside a 360px-wide phone card.
                 // 4-col cards loosened 0.78 → 0.68 so the info block fits
                 // the new stock stepper below the fixed 5:4 photo slot.
-                childAspectRatio: cols >= 4 ? 0.68 : (cols == 3 ? 0.62 : 0.52),
+                // At 320px the two-column card is only ~246px tall while the
+                // info block (name, category, price, stock, stepper) needs
+                // ~260px, so the narrowest phones get a taller ratio.
+                childAspectRatio: cols >= 4
+                    ? 0.68
+                    : (cols == 3
+                        ? 0.62
+                        : (MediaQuery.sizeOf(context).width < 360
+                            ? 0.47
+                            : 0.52)),
               ),
               itemCount: visible.length,
               itemBuilder: (context, i) => AnimationConfiguration.staggeredGrid(

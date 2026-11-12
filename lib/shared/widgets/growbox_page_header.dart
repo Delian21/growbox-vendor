@@ -33,6 +33,8 @@ class GrowboxPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Same phone breakpoint the rest of the shell uses for FAB / dock logic.
+    final isPhone = MediaQuery.sizeOf(context).width < AppDimensions.mobile;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -55,7 +57,11 @@ class GrowboxPageHeader extends StatelessWidget {
               ],
               Text(
                 subtitle,
-                maxLines: 1,
+                // Phones get two lines. A one-line subtitle truncated mid-sentence
+                // reads as a bug at 390px, where the trailing badge already
+                // claims a third of the width.
+                maxLines: isPhone ? 2 : 1,
+                softWrap: isPhone,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 14,

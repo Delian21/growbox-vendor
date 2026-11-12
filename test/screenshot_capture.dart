@@ -160,6 +160,25 @@ void main() {
     });
   }
 
+  // 320px: the narrowest phone width the mobile headers are designed for.
+  for (final (label, index) in [('light', 1), ('dark', 2)]) {
+    testWidgets('phone 320 $label', (tester) async {
+      await _boot(tester, const Size(320, 800), index);
+      for (final (page, route) in const [
+        ('dashboard', '/dashboard'),
+        ('notifications', '/notifications'),
+        ('order_details', '/orders/%23ORD-001'),
+        ('products', '/products'),
+        ('sales', '/sales'),
+      ]) {
+        appRouter.go(route);
+        await _settle(tester);
+        tester.takeException();
+        await _shot(tester, 'phone320_${page}_$label');
+      }
+    });
+  }
+
   // Accessibility: the rail at 2.0x, the platform maximum text size.
   testWidgets('desktop 2.0x text expanded', (tester) async {
     await _boot(tester, _desktop, 1, textScale: 2.0);
