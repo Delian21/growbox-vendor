@@ -92,7 +92,8 @@ final List<NotificationItem> mockNotifications = [
   NotificationItem(
     id: '12',
     title: 'Store Approved',
-    message: 'Your store "Farm Fresh Ltd" has been approved and is now visible to customers.',
+    message:
+        'Your store has been approved and is now visible to customers.',
     type: NotificationType.store,
     priority: NotificationPriority.high,
     isRead: true,
