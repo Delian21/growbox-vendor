@@ -269,6 +269,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final itemsText = order.items.map((i) => '${i.productName} (${i.quantity})').join(', '); 
     final isMobile = MediaQuery.sizeOf(context).width < AppDimensions.tablet;
 
+    // Per-row change state: only this row spins/blocks, and only this row
+    // shows an inline error after a failed change.
+    final provider = context.watch<OrdersProvider>();
+    final rowState = provider.rowState(order.id);
+    final isRowPending = rowState == OrderRowState.pending;
+    final isRowFailed = rowState == OrderRowState.failed;
+    final changeTarget = provider.rowTarget(order.id);
+    final isRestoring = provider.isRestoringRow(order.id);
+    // Pending decisions (Accept / Reject) stay on screen while in flight, so
+    // the spinner and the inline error have somewhere to live.
+    final showDecisionActions = order.status == OrderStatus.pending ||
+        provider.isPendingDecisionRow(order.id);
+    // Cancelled rows offer Restore within 24h — and keep the button while the
+    // restore itself is in flight.
+    final showRestore = provider.canRestore(order) || isRestoring;
+
     // Mobile: Card layout
     if (isMobile) {
       return GrowboxTable.row(
@@ -319,17 +335,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ],
               ),
-              if (order.status == OrderStatus.pending) ...[
-                const SizedBox(height: AppDimensions.sm),                  Row(
+              // Pending rows keep their actions while a change is in flight or
+              // after one failed, so the spinner/retry stays where the vendor
+              // tapped instead of vanishing with the optimistic status change.
+              if (showDecisionActions) ...[
+                const SizedBox(height: AppDimensions.sm),
+                Row(
                     children: [
                       // Bulk-select tick — pending orders only. The label
-                      // gives the control a name for screen readers.
+                      // gives the control a name for screen readers; it is
+                      // disabled while this row's change is in flight.
                       Semantics(
                         container: true,
                         label: 'Select order ${order.id}',
                         child: Checkbox(
                           value: _selectedPending.contains(order.id),
-                          onChanged: (v) => _toggleSelected(order.id, v),
+                          onChanged: isRowPending
+                              ? null
+                              : (v) => _toggleSelected(order.id, v),
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           visualDensity: VisualDensity.compact,
                         ),
@@ -338,7 +361,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Expanded(
                         child: GrowboxButton(
                           label: 'Accept',
-                          onPressed: () => _acceptOrder(context, order),
+                          // The pressed button spins; both are disabled until
+                          // the change settles, so it cannot be double-tapped.
+                          isLoading: isRowPending &&
+                              changeTarget == OrderStatus.accepted,
+                          onPressed: isRowPending
+                              ? null
+                              : () => _acceptOrder(context, order),
                           icon: Icons.check_circle_outline,
                         ),
                     ),
@@ -347,13 +376,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     Expanded(
                       child: GrowboxButton(
                         label: 'Reject',
-                        onPressed: () => _rejectOrder(context, order),
+                        isLoading: isRowPending &&
+                            changeTarget == OrderStatus.cancelled,
+                        onPressed: isRowPending
+                            ? null
+                            : () => _rejectOrder(context, order),
                         variant: GrowboxButtonVariant.dangerOutline,
                         icon: Icons.cancel_outlined,
                       ),
                     ),
                   ],
                 ),
+                if (isRowFailed)
+                  _buildRowError(context, provider, order),
+              ],
+              // Restore is the way back for a rejected order once the Undo
+              // snackbar is gone (still only inside the 24h window).
+              if (showRestore) ...[
+                const SizedBox(height: AppDimensions.sm),
+                SizedBox(
+                  width: double.infinity,
+                  child: GrowboxButton(
+                    label: 'Restore',
+                    icon: Icons.restore,
+                    variant: GrowboxButtonVariant.secondary,
+                    isLoading: isRowPending && isRestoring,
+                    onPressed: isRowPending
+                        ? null
+                        : () => provider.restoreOrders([order.id]),
+                  ),
+                ),
+                if (isRowFailed)
+                  _buildRowError(context, provider, order),
               ],
             ],
           ),
@@ -367,7 +421,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         // otherwise treat as a URL fragment and drop the path
         // parameter (the row would never navigate).
         context.go('/orders/${Uri.encodeComponent(order.id)}'),
-      child: Row(
+      // The failed-state strip sits under the whole row, full width, so the
+      // inline Retry never squeezes the table columns.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Order ID + Customer
@@ -408,18 +468,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
             // pending orders get buttons.
             SizedBox(
               width: _actionsColWidth,
-              child: order.status == OrderStatus.pending
+              child: showDecisionActions
                   ? Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         // Bulk-select tick — pending orders only, labelled for
-                        // screen readers.
+                        // screen readers; disabled while this row is in flight.
                         Semantics(
                           container: true,
                           label: 'Select order ${order.id}',
                           child: Checkbox(
                             value: _selectedPending.contains(order.id),
-                            onChanged: (v) => _toggleSelected(order.id, v),
+                            onChanged: isRowPending
+                                ? null
+                                : (v) => _toggleSelected(order.id, v),
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             visualDensity: VisualDensity.compact,
                           ),
@@ -429,6 +491,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         // shared table-action component the dashboard uses.
                         GrowboxTableAction(
                           label: 'Accept',
+                          isLoading: isRowPending &&
+                              changeTarget == OrderStatus.accepted,
+                          isEnabled: !isRowPending,
                           onTap: () => _acceptOrder(context, order),
                         ),
                         const SizedBox(width: 6),
@@ -436,14 +501,69 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         GrowboxTableAction(
                           label: 'Reject',
                           variant: GrowboxTableActionVariant.outline,
+                          isLoading: isRowPending &&
+                              changeTarget == OrderStatus.cancelled,
+                          isEnabled: !isRowPending,
                           onTap: () => _rejectOrder(context, order),
                         ),
                       ],
                     )
-                  : const SizedBox.shrink(),
+                  : showRestore
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: GrowboxTableAction(
+                            label: 'Restore',
+                            variant: GrowboxTableActionVariant.neutral,
+                            isLoading: isRowPending && isRestoring,
+                            isEnabled: !isRowPending,
+                            onTap: () => provider.restoreOrders([order.id]),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
             ),
           ],
         ),
+          if (isRowFailed)
+            _buildRowError(context, provider, order),
+        ],
+      ),
+    );
+  }
+
+  /// Short inline failure line under a row: what went wrong plus a Retry that
+  /// repeats the failed change (the row state remembers its target).
+  Widget _buildRowError(
+      BuildContext context, OrdersProvider provider, Order order) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimensions.xs),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 14, color: AppColors.error),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              provider.rowError(order.id) ?? 'Something went wrong.',
+              style: const TextStyle(fontSize: 12, color: AppColors.error),
+            ),
+          ),
+          // A refused transition has nothing to repeat, so it shows only the
+          // reason; a failed change/undo keeps its Retry.
+          if (provider.canRetry(order.id))
+          TextButton(
+            onPressed: () => provider.retryOrderChange(order.id),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Retry',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -607,35 +727,83 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
     if (reason == null || !context.mounted) return;
 
-    var rejected = 0;
-    for (final id in ids) {
-      final ok = await provider.updateOrderStatus(
-        id,
-        OrderStatus.cancelled,
-        notes: reason.isEmpty ? null : reason,
-      );
-      if (ok) rejected++;
-    }
+    // One batch: a single simulated delay and one save for the whole selection.
+    final rejected = await provider.rejectOrders(
+      ids,
+      notes: reason.isEmpty ? null : reason,
+    );
     if (!context.mounted) return;
     setState(_selectedPending.clear);
-    if (rejected > 0) {
-      SnackbarHelper.showSuccess(
-          context, '$rejected order${rejected == 1 ? '' : 's'} rejected');
-    } else {
+    if (rejected == 0) {
       SnackbarHelper.showError(context, 'No pending orders in the selection');
+      return;
     }
+    // Undo covers exactly the orders that were actually rejected.
+    final rejectedIds = ids
+        .where((id) => provider.rowState(id) != OrderRowState.failed)
+        .toList();
+    _showRejectionSnackbar(context, rejectedIds,
+        failed: ids.length - rejected);
+  }
+
+  /// Reject feedback with a 6-second Undo. The bar is the quick way back from
+  /// a mis-tap; when it disappears the rejection stands, and the Cancelled
+  /// tab's Restore still covers the 24h window.
+  void _showRejectionSnackbar(
+    BuildContext context,
+    List<String> ids, {
+    int failed = 0,
+  }) {
+    if (ids.isEmpty) return;
+    final provider = context.read<OrdersProvider>();
+    final count = ids.length;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.cancel_outlined, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(failed > 0
+                    ? '$count rejected, $failed failed — retry from the row'
+                    : '$count order${count == 1 ? '' : 's'} rejected'),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'Undo',
+            textColor: Colors.white,
+            onPressed: () => provider.restoreOrders(ids),
+          ),
+        ),
+      );
   }
 
   Future<void> _acceptSelected(BuildContext context) async {
     final provider = context.read<OrdersProvider>();
-    final count = await provider.acceptOrders(_selectedPending.toList());
+    final ids = _selectedPending.toList();
+    // Same one-delay batch path as reject.
+    final count = await provider.acceptOrders(ids);
     if (!context.mounted) return;
     setState(_selectedPending.clear);
-    if (count > 0) {
+    final failed = ids.length - count;
+    if (count == 0) {
+      SnackbarHelper.showError(context, 'No pending orders in the selection');
+    } else if (failed > 0) {
+      SnackbarHelper.showError(
+          context, '$count accepted, $failed failed — retry from the row');
+    } else {
       SnackbarHelper.showSuccess(
           context, '$count order${count == 1 ? '' : 's'} accepted');
-    } else {
-      SnackbarHelper.showError(context, 'No pending orders in the selection');
     }
   }
 
@@ -654,7 +822,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         notes: reason.isEmpty ? null : reason,
       );
       if (success && context.mounted) {
-        SnackbarHelper.showSuccess(context, 'Order ${order.id} rejected');
+        _showRejectionSnackbar(context, [order.id]);
       }
     }
   }

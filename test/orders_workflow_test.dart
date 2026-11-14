@@ -165,8 +165,10 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final provider = OrdersProvider();
 
+      // #ORD-001 is pending, so Pending → Cancelled is allowed by the
+      // transition table (#ORD-005 is already cancelled and final).
       final ok = await provider.updateOrderStatus(
-        '#ORD-005',
+        '#ORD-001',
         OrderStatus.cancelled,
         notes: 'Duplicate order',
       );
@@ -174,8 +176,8 @@ void main() {
 
       final prefs = await SharedPreferences.getInstance();
       final saved = jsonDecode(prefs.getString('orders_state')!);
-      expect(saved['#ORD-005']['status'], 'cancelled');
-      expect(saved['#ORD-005']['notes'], 'Duplicate order');
+      expect(saved['#ORD-001']['status'], 'cancelled');
+      expect(saved['#ORD-001']['notes'], 'Duplicate order');
     });
 
     test('a fresh provider restores the saved decisions (page reload)',

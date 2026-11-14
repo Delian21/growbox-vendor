@@ -1,14 +1,111 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/order.dart';
 
+/// Progress of the last status change made to one order. The Orders page
+/// shows a spinner on a `pending` row and an inline Retry on a `failed` one,
+/// so a single change never blocks or blanks the rest of the list.
+enum OrderRowState { idle, pending, failed }
+
+/// One row's in-flight change: what was asked for (so a failed change can be
+/// retried without the caller remembering it) and where the row came from.
+class _RowChange {
+  const _RowChange(
+    this.state, {
+    this.error,
+    this.target,
+    this.notes,
+    this.from,
+    this.clearNotes = false,
+    this.isRestore = false,
+  });
+
+  final OrderRowState state;
+  final String? error;
+  final OrderStatus? target;
+  final String? notes;
+  final OrderStatus? from;
+
+  /// Restore/Undo drops the rejection reason; Retry must keep doing that.
+  final bool clearNotes;
+
+  /// True when this row's change is an Undo/Restore rather than a normal
+  /// transition — the row uses it to tell the two apart while rendering.
+  final bool isRestore;
+
+  bool get isPending => state == OrderRowState.pending;
+}
+
 class OrdersProvider extends ChangeNotifier {
   List<Order> _orders = [];
-  bool _isLoading = false;
+
+  /// First load only (seed + restored decisions). Status changes never flip
+  /// this, so the list is never replaced by the skeleton while the vendor
+  /// works on a row.
+  bool _initialising = true;
   OrderStatus? _filterStatus;
+
+  /// Per-order change state, keyed by order id. Absent = idle.
+  final Map<String, _RowChange> _rowStates = {};
+
+  /// How long a status change simulates backend latency. Tests shorten it.
+  /// DEBUG ONLY: release builds ignore this and always take the production
+  /// half-second (see [_simulateLatency]) — a test hook must never be able to
+  /// change timing in a shipped app.
+  Duration debugChangeDelay = const Duration(milliseconds: 500);
+
+  // ── TEST HOOKS — never surfaced in the UI, inert outside debug builds ──
+  /// Makes the next single status change fail once (rolled back + failed).
+  bool debugFailNext = false;
+
+  /// Ids whose next status change fails, so a batch can fail partially.
+  final Set<String> debugFailOrderIds = {};
+
+  /// How many times one change/batch ran the simulated delay. Test-only, so
+  /// the batch tests can count one delay instead of timing the clock.
+  int debugDelayCount = 0;
+
+  /// How many times the state was written to prefs. Test-only.
+  int debugSaveCount = 0;
+
+  // ── TRANSITION RULES ──
+  /// The one explicit rule table for order status changes. Anything not in
+  /// the set is refused before any state changes and reported on the row.
+  /// Completed and Cancelled are final — Undo/Restore ([restoreOrders]) is
+  /// the single documented exception, and it only leaves Cancelled for the
+  /// status the order held before it was rejected.
+  static const Map<OrderStatus, Set<OrderStatus>> transitions = {
+    OrderStatus.pending: {OrderStatus.accepted, OrderStatus.cancelled},
+    OrderStatus.accepted: {OrderStatus.preparing, OrderStatus.cancelled},
+    OrderStatus.preparing: {OrderStatus.ready, OrderStatus.cancelled},
+    OrderStatus.ready: {OrderStatus.completed, OrderStatus.cancelled},
+    OrderStatus.completed: <OrderStatus>{},
+    OrderStatus.cancelled: <OrderStatus>{},
+  };
+
+  /// Whether [from] → [to] is a normal, allowed change.
+  static bool canTransition(OrderStatus from, OrderStatus to) =>
+      transitions[from]!.contains(to);
+
+  /// Human-readable status name for error messages.
+  static String statusLabel(OrderStatus status) => switch (status) {
+        OrderStatus.pending => 'Pending',
+        OrderStatus.accepted => 'Accepted',
+        OrderStatus.preparing => 'Preparing',
+        OrderStatus.ready => 'Ready',
+        OrderStatus.completed => 'Completed',
+        OrderStatus.cancelled => 'Cancelled',
+      };
+
+  /// How long a rejected order stays restorable from the Cancelled tab.
+  static const Duration restoreWindow = Duration(hours: 24);
+
+  /// Where a Restore puts each cancelled order back to — the status it held
+  /// just before it was cancelled. Persisted with the state overlay.
+  final Map<String, OrderStatus> _restoreTargets = {};
 
   /// The one order every list in the app is shown in: pending first (those
   /// need a decision), then newest to oldest within each group.
@@ -29,12 +126,69 @@ class OrdersProvider extends ChangeNotifier {
   List<Order> get orders {
     final list = _filterStatus == null
         ? List<Order>.from(_orders)
-        : _orders.where((o) => o.status == _filterStatus).toList();
+        // A row whose change is in flight keeps its place in the filter it was
+        // shown in, even though its optimistic status no longer matches — it
+        // must stay visible while pending.
+        : _orders
+            .where((o) =>
+                o.status == _filterStatus ||
+                (_rowStates[o.id]?.isPending == true &&
+                    _rowStates[o.id]?.from == _filterStatus))
+            .toList();
     list.sort(compareForAction);
     return list;
   }
 
-  bool get isLoading => _isLoading;
+  /// True only while the very first load is being restored.
+  bool get isLoading => _initialising;
+
+  // ── Per-row change state ──
+  OrderRowState rowState(String orderId) =>
+      _rowStates[orderId]?.state ?? OrderRowState.idle;
+
+  String? rowError(String orderId) => _rowStates[orderId]?.error;
+
+  /// The status the in-flight (or failed) change is aiming for, so the row can
+  /// spin the button that was pressed and Retry can repeat it.
+  OrderStatus? rowTarget(String orderId) => _rowStates[orderId]?.target;
+
+  /// Retry only exists when the failed change had a target — a change refused
+  /// by the transition table has nothing to repeat.
+  bool canRetry(String orderId) => _rowStates[orderId]?.target != null;
+
+  /// True while this row's change is an Undo/Restore.
+  bool isRestoringRow(String orderId) =>
+      _rowStates[orderId]?.isRestore ?? false;
+
+  /// True when this row's in-flight (or failed) change is a Pending decision
+  /// (Accept or Reject) — those two actions stay rendered for it while the
+  /// optimistic status no longer reads "pending".
+  bool isPendingDecisionRow(String orderId) {
+    final change = _rowStates[orderId];
+    return change != null &&
+        !change.isRestore &&
+        change.from == OrderStatus.pending;
+  }
+
+  /// A rejected order can be restored for [restoreWindow] after it was
+  /// created; older cancelled orders are final.
+  bool canRestore(Order order) =>
+      order.status == OrderStatus.cancelled &&
+      DateTime.now().difference(order.createdAt) < restoreWindow;
+
+  /// The status a Restore targets for [orderId] (defaults to Pending when the
+  /// pre-cancel status was never recorded, e.g. the seeded demo orders).
+  OrderStatus restoreTargetFor(String orderId) =>
+      _validRestoreTarget(_restoreTargets[orderId]);
+
+  OrderStatus _validRestoreTarget(OrderStatus? stored) {
+    if (stored != null &&
+        stored != OrderStatus.cancelled &&
+        stored != OrderStatus.completed) {
+      return stored;
+    }
+    return OrderStatus.pending;
+  }
   OrderStatus? get filterStatus => _filterStatus;
   int get totalCount => _orders.length;
   int get pendingCount =>
@@ -98,24 +252,40 @@ class OrdersProvider extends ChangeNotifier {
           status: status,
           notes: notes is String && notes.isNotEmpty ? notes : null,
         ));
+        final restoreTo = OrderStatus.values.asNameMap()[entry['restoreTo']];
+        if (status == OrderStatus.cancelled &&
+            restoreTo != null &&
+            restoreTo != OrderStatus.cancelled) {
+          _restoreTargets[order.id] = restoreTo;
+        }
         changed = true;
       }
       _orders = restored;
       if (changed) notifyListeners();
     } catch (_) {
       // A corrupt/absent store just means "all seed orders" — never crash.
+    } finally {
+      // First load ends here (including the no-saved-state and corrupt-store
+      // paths); from now on the list is never replaced by the skeleton.
+      _initialising = false;
+      notifyListeners();
     }
   }
 
   /// Writes every order's current status (+ rejection reason) to prefs —
   /// the overlay [_restoreState] replays on the next launch.
   Future<void> _persistState() async {
+    if (kDebugMode) debugSaveCount++;
     final prefs = await SharedPreferences.getInstance();
     final state = {
       for (final o in _orders)
         o.id: {
           'status': o.status.name,
           if (o.notes != null && o.notes!.isNotEmpty) 'notes': o.notes,
+          // Remember where a Restore goes, so the 24h window survives reloads.
+          if (o.status == OrderStatus.cancelled &&
+              _restoreTargets[o.id] != null)
+            'restoreTo': _restoreTargets[o.id]!.name,
         },
     };
     await prefs.setString(_stateKey, jsonEncode(state));
@@ -216,52 +386,241 @@ class OrdersProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Changes one order optimistically: the row shows [newStatus] immediately,
+  /// only its own [OrderRowState] goes pending, and a failure rolls the row
+  /// back and marks it failed. Everything else in the list stays interactive.
+  ///
+  /// Refused up front when [transitions] doesn't allow the move — nothing is
+  /// changed, and the row reports why.
   Future<bool> updateOrderStatus(
     String orderId,
     OrderStatus newStatus, {
     String? notes,
+    bool clearNotes = false,
   }) async {
-    _isLoading = true;
-    notifyListeners();
-
-    await Future.delayed(const Duration(milliseconds: 500));
-
     final index = _orders.indexWhere((o) => o.id == orderId);
-    if (index != -1) {
-      _orders[index] = _orders[index].copyWith(status: newStatus, notes: notes);
-      await _persistState();
+    if (index == -1) return false;
+
+    final previous = _orders[index];
+    if (!canTransition(previous.status, newStatus)) {
+      _rowStates[orderId] = _RowChange(
+        OrderRowState.failed,
+        error: '${statusLabel(previous.status)} orders can\'t move to '
+            '${statusLabel(newStatus)}.',
+        from: previous.status,
+      );
+      notifyListeners();
+      return false;
     }
 
-    _isLoading = false;
+    _rowStates[orderId] = _RowChange(
+      OrderRowState.pending,
+      target: newStatus,
+      notes: notes,
+      from: previous.status,
+      clearNotes: clearNotes,
+    );
+    _orders[index] = previous.copyWith(
+      status: newStatus,
+      notes: notes,
+      clearNotes: clearNotes,
+    );
     notifyListeners();
-    return index != -1;
+
+    await _simulateLatency();
+
+    if (_consumeFailure(orderId)) {
+      _rollBack(orderId, previous, newStatus, notes);
+      return false;
+    }
+
+    await _persistState();
+    _rowStates[orderId] = const _RowChange(OrderRowState.idle);
+    if (newStatus == OrderStatus.cancelled) {
+      // Remember where a Restore/Undo should put this order back to.
+      _restoreTargets[orderId] = previous.status;
+    } else {
+      _restoreTargets.remove(orderId);
+    }
+    notifyListeners();
+    return true;
   }
 
-  /// Accepts several pending orders in one action: one simulated latency,
-  /// one persist, one repaint. Non-pending or unknown ids are skipped;
-  /// returns how many orders were actually accepted.
-  Future<int> acceptOrders(List<String> orderIds) async {
-    if (orderIds.isEmpty) return 0;
+  /// Repeats the change that failed on [orderId]; the failed state already
+  /// remembers the target status and any rejection reason.
+  Future<bool> retryOrderChange(String orderId) async {
+    final change = _rowStates[orderId];
+    final target = change?.target;
+    if (change == null || change.state != OrderRowState.failed || target == null) {
+      return false;
+    }
+    // An undo is repeated as an undo (it bypasses the table for Cancelled).
+    if (change.isRestore) {
+      final restored = await restoreOrders([orderId]);
+      return restored > 0;
+    }
+    return updateOrderStatus(
+      orderId,
+      target,
+      notes: change.notes,
+      clearNotes: change.clearNotes,
+    );
+  }
 
-    _isLoading = true;
-    notifyListeners();
+  /// Accepts pending orders in one action. See [_applyBatch].
+  Future<int> acceptOrders(List<String> orderIds) =>
+      _applyBatch(orderIds, OrderStatus.accepted);
 
-    await Future.delayed(const Duration(milliseconds: 500));
+  /// Rejects orders in one action, applying [notes] (the dialog's optional
+  /// reason) to each of them. Only ids the transition table allows to be
+  /// cancelled take part. See [_applyBatch].
+  Future<int> rejectOrders(List<String> orderIds, {String? notes}) =>
+      _applyBatch(orderIds, OrderStatus.cancelled, notes: notes);
 
+  /// Undo/Restore — the single documented exception to the table: a cancelled
+  /// order goes back to the status it held before it was cancelled (Pending
+  /// when that was never recorded). The rejection reason is removed.
+  ///
+  /// Uses the same per-row pending/failed state as every other change and one
+  /// delay/save for the whole set, so a failed undo shows an inline error with
+  /// Retry instead of doing nothing. Refuses orders outside the 24h window.
+  Future<int> restoreOrders(List<String> orderIds) async {
     final wanted = orderIds.toSet();
-    var accepted = 0;
+    final previous = <String, Order>{};
     for (var i = 0; i < _orders.length; i++) {
       final order = _orders[i];
-      if (wanted.contains(order.id) && order.status == OrderStatus.pending) {
-        _orders[i] = order.copyWith(status: OrderStatus.accepted);
-        accepted++;
-      }
+      if (!wanted.contains(order.id)) continue;
+      if (order.status != OrderStatus.cancelled) continue;
+      if (!canRestore(order)) continue;
+      final target = restoreTargetFor(order.id);
+      previous[order.id] = order;
+      _rowStates[order.id] = _RowChange(
+        OrderRowState.pending,
+        target: target,
+        from: order.status,
+        clearNotes: true,
+        isRestore: true,
+      );
+      _orders[i] = order.copyWith(status: target, clearNotes: true);
     }
-    if (accepted > 0) await _persistState();
+    if (previous.isEmpty) return 0;
 
-    _isLoading = false;
     notifyListeners();
-    return accepted;
+    await _simulateLatency();
+
+    var applied = 0;
+    for (final entry in previous.entries) {
+      final target = restoreTargetFor(entry.key);
+      if (_consumeFailure(entry.key)) {
+        _rollBack(entry.key, entry.value, target, null,
+            clearNotes: true, isRestore: true);
+        continue;
+      }
+      _restoreTargets.remove(entry.key);
+      _rowStates[entry.key] = const _RowChange(OrderRowState.idle);
+      applied++;
+    }
+    if (applied > 0) await _persistState();
+    notifyListeners();
+    return applied;
+  }
+
+  /// Applies [newStatus] to every eligible id with ONE simulated delay and ONE
+  /// save. Each order gets its own pending → idle/failed transition, so a
+  /// single failure never undoes the others. Non-matching ids are skipped;
+  /// returns how many orders actually changed.
+  Future<int> _applyBatch(
+    List<String> orderIds,
+    OrderStatus newStatus, {
+    String? notes,
+  }) async {
+    final wanted = orderIds.toSet();
+    final previous = <String, Order>{};
+    for (var i = 0; i < _orders.length; i++) {
+      final order = _orders[i];
+      if (!wanted.contains(order.id)) continue;
+      // The table decides eligibility — Completed/Cancelled ids are skipped.
+      if (!canTransition(order.status, newStatus)) continue;
+      previous[order.id] = order;
+      _rowStates[order.id] = _RowChange(
+        OrderRowState.pending,
+        target: newStatus,
+        notes: notes,
+        from: order.status,
+      );
+      _orders[i] = order.copyWith(status: newStatus, notes: notes);
+    }
+    if (previous.isEmpty) return 0;
+
+    notifyListeners();
+    await _simulateLatency();
+
+    var applied = 0;
+    for (final entry in previous.entries) {
+      if (_consumeFailure(entry.key)) {
+        _rollBack(entry.key, entry.value, newStatus, notes);
+        continue;
+      }
+      _rowStates[entry.key] = const _RowChange(OrderRowState.idle);
+      if (newStatus == OrderStatus.cancelled) {
+        _restoreTargets[entry.key] = entry.value.status;
+      } else {
+        _restoreTargets.remove(entry.key);
+      }
+      applied++;
+    }
+    if (applied > 0) await _persistState();
+    notifyListeners();
+    return applied;
+  }
+
+  /// True when this change is forced to fail (test hooks). Each hook is
+  /// one-shot so a retry can succeed.
+  bool _consumeFailure(String orderId) {
+    // TEST HOOKS ARE DEBUG-ONLY: tests run with asserts enabled, so the guard
+    // is always true there. In a release build the failures are impossible —
+    // no stray flag or id can make a real vendor's order fail its save.
+    if (!kDebugMode) return false;
+    if (debugFailOrderIds.remove(orderId)) return true;
+    if (debugFailNext) {
+      debugFailNext = false;
+      return true;
+    }
+    return false;
+  }
+
+  /// The mock backend's latency. Release builds always take the production
+  /// half-second: [debugChangeDelay] is a debug-only test hook, so a
+  /// non-default value in a release build is ignored rather than honoured.
+  Future<void> _simulateLatency() async {
+    if (kDebugMode) debugDelayCount++;
+    await Future<void>.delayed(kDebugMode
+        ? debugChangeDelay
+        : const Duration(milliseconds: 500));
+  }
+
+  /// Puts the row back the way it was and records why, so the row can show an
+  /// inline error with a Retry that repeats the same change.
+  void _rollBack(
+    String orderId,
+    Order previous,
+    OrderStatus target,
+    String? notes, {
+    bool clearNotes = false,
+    bool isRestore = false,
+  }) {
+    final index = _orders.indexWhere((o) => o.id == orderId);
+    if (index != -1) _orders[index] = previous;
+    _rowStates[orderId] = _RowChange(
+      OrderRowState.failed,
+      error: 'Couldn\'t update this order. Check your connection and retry.',
+      target: target,
+      notes: notes,
+      from: previous.status,
+      clearNotes: clearNotes,
+      isRestore: isRestore,
+    );
+    notifyListeners();
   }
 
   Order? getOrderById(String id) {

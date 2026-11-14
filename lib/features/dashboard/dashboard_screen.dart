@@ -1637,18 +1637,35 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // Quick action: flip the oldest pending order to Ready and confirm —
-  // a real task from the Orders provider, not a link to the Orders screen.
+  // Quick action: move the oldest order that is already in progress to Ready
+  // and confirm — a real task from the Orders provider, not a link.
+  //
+  // Eligible = Accepted or Preparing ONLY, oldest first. Pending orders are
+  // deliberately excluded: this shortcut must never accept an order the vendor
+  // has not decided on (that is a customer-facing notification), and the
+  // provider's transition table forbids Pending → Ready anyway.
   Future<void> _markNextOrderReady(BuildContext context) async {
     final provider = context.read<OrdersProvider>();
-    final pending =
-        provider.orders.where((o) => o.status == OrderStatus.pending).toList();
-    if (pending.isEmpty) {
-      SnackbarHelper.showError(context, 'No pending orders to mark ready');
+    final candidates = provider.allOrders
+        .where((o) =>
+            o.status == OrderStatus.accepted ||
+            o.status == OrderStatus.preparing)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (candidates.isEmpty) {
+      SnackbarHelper.showError(context, 'No accepted orders to mark ready');
       return;
     }
-    final order = pending.first;
-    final ok = await provider.updateOrderStatus(order.id, OrderStatus.ready);
+    final order = candidates.first;
+    // An Accepted order takes both allowed steps; a Preparing one is one away.
+    final steps = order.status == OrderStatus.accepted
+        ? const [OrderStatus.preparing, OrderStatus.ready]
+        : const [OrderStatus.ready];
+    var ok = true;
+    for (final next in steps) {
+      ok = await provider.updateOrderStatus(order.id, next);
+      if (!ok) break;
+    }
     if (!context.mounted) return;
     if (ok) {
       SnackbarHelper.showSuccess(context, 'Order ${order.id} is ready');

@@ -48,6 +48,8 @@ class Order {
   int get totalItems =>
       items.fold(0, (sum, item) => sum + item.quantity);
 
+  /// [clearNotes] explicitly drops the notes (a Restore removes the rejection
+  /// reason); passing `notes: null` alone means "keep what's there".
   Order copyWith({
     String? customerName,
     String? customerPhone,
@@ -55,6 +57,7 @@ class Order {
     OrderStatus? status,
     DateTime? createdAt,
     String? notes,
+    bool clearNotes = false,
   }) {
     return Order(
       id: id,
@@ -63,7 +66,7 @@ class Order {
       items: items ?? this.items,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
-      notes: notes ?? this.notes,
+      notes: clearNotes ? null : (notes ?? this.notes),
     );
   }
 }

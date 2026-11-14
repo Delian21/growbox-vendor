@@ -36,11 +36,20 @@ class GrowboxTableAction extends StatefulWidget {
   final VoidCallback onTap;
   final GrowboxTableActionVariant variant;
 
+  /// Shows a small spinner in place of the label (a change is in flight) and
+  /// blocks taps, so the action cannot be fired twice.
+  final bool isLoading;
+
+  /// Dimmed and non-interactive while another action on the row is running.
+  final bool isEnabled;
+
   const GrowboxTableAction({
     super.key,
     required this.label,
     required this.onTap,
     this.variant = GrowboxTableActionVariant.solid,
+    this.isLoading = false,
+    this.isEnabled = true,
   });
 
   @override
@@ -98,12 +107,16 @@ class _GrowboxTableActionState extends State<GrowboxTableAction> {
         ),
     };
 
+    final interactive = widget.isEnabled && !widget.isLoading;
+
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => _setHovered(true),
+      cursor: interactive
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      onEnter: (_) => _setHovered(interactive),
       onExit: (_) => _setHovered(false),
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: interactive ? widget.onTap : null,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
@@ -112,13 +125,25 @@ class _GrowboxTableActionState extends State<GrowboxTableAction> {
                 border == null ? null : Border.all(color: border, width: 1),
             borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
           ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: label,
-            ),
+          child: Opacity(
+            opacity: widget.isEnabled ? 1 : 0.55,
+            child: widget.isLoading
+                ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: label,
+                    ),
+                  )
+                : Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: label,
+                    ),
+                  ),
           ),
         ),
       ),

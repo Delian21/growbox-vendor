@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:growbox_vendor/main.dart';
+import 'package:growbox_vendor/app/providers/orders_provider.dart';
 import 'package:growbox_vendor/app/router.dart';
+import 'package:growbox_vendor/data/models/order.dart';
 import 'package:growbox_vendor/core/constants/app_colors.dart';
 import 'package:growbox_vendor/core/constants/app_dimensions.dart';
 import 'package:growbox_vendor/shared/widgets/growbox_table_action.dart';
@@ -186,5 +188,49 @@ void main() {
     expect(pillRect.right < acceptRect.left, isTrue);
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Mark order ready ignores Pending orders and changes nothing',
+      (tester) async {
+    await pumpDashboard(
+      tester,
+      themeModeIndex: 1,
+      size: const Size(1440, 900),
+    );
+    final provider = Provider.of<OrdersProvider>(
+      tester.element(find.text('Mark order ready')),
+      listen: false,
+    );
+    provider.debugChangeDelay = const Duration(milliseconds: 10);
+
+    // Leave only Pending orders: cancel the seeded Accepted (#ORD-006) and
+    // Preparing (#ORD-002) ones, both legal transitions.
+    for (final id in ['#ORD-006', '#ORD-002']) {
+      final change = provider.updateOrderStatus(id, OrderStatus.cancelled);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(await change, isTrue);
+    }
+    await tester.pumpAndSettle();
+    expect(provider.allOrders.any((o) =>
+        o.status == OrderStatus.accepted ||
+        o.status == OrderStatus.preparing), isFalse);
+
+    final before = {
+      for (final o in provider.allOrders) o.id: o.status,
+    };
+
+    await tester.tap(find.text('Mark order ready'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    // Short message, and not a single status moved — Pending included.
+    expect(find.text('No accepted orders to mark ready'), findsOneWidget);
+    final after = {
+      for (final o in provider.allOrders) o.id: o.status,
+    };
+    expect(after, before);
+    expect(provider.getOrderById('#ORD-001')!.status, OrderStatus.pending);
+    expect(provider.getOrderById('#ORD-007')!.status, OrderStatus.pending);
   });
 }
