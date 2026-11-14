@@ -1258,14 +1258,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                               children: [
                                 _buildCategoryLegendIcon(cat),
                                 const SizedBox(width: 8),
-                                Text(
-                                  cat.label,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                // Flexible label: in the beside-ring column at
+                                // 2.0x text the name plus the percentage no
+                                // longer fit and the row overflowed (95px at
+                                // 1440 with the rail collapsed).
+                                Expanded(
+                                  child: Text(
+                                    cat.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+                                    ),
                                   ),
                                 ),
-                                const Spacer(),
+                                const SizedBox(width: 8),
                                 Text(
                                   '${cat.percentage}%',
                                   style: TextStyle(
