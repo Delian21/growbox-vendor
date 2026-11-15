@@ -179,6 +179,22 @@ void main() {
     });
   }
 
+  // Narrowest phone width at the platform's maximum text size, light mode:
+  // the hardest layout case for the data-dense screens.
+  testWidgets('phone 320 light text 2.0x', (tester) async {
+    await _boot(tester, const Size(320, 800), 1, textScale: 2.0);
+    for (final (page, route) in const [
+      ('orders', '/orders'),
+      ('dashboard', '/dashboard'),
+      ('products', '/products'),
+    ]) {
+      appRouter.go(route);
+      await _settle(tester);
+      tester.takeException();
+      await _shot(tester, 'phone320_${page}_light_text2x');
+    }
+  });
+
   // Accessibility: the rail at 2.0x, the platform maximum text size.
   testWidgets('desktop 2.0x text expanded', (tester) async {
     await _boot(tester, _desktop, 1, textScale: 2.0);

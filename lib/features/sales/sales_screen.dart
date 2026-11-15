@@ -776,21 +776,37 @@ class SalesScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppDimensions.sm),
+            // Loose Flexible children + the Spacer: the normal layout is
+            // unchanged (date flush right), but at large text scales each text
+            // shrinks/ellipsizes instead of overflowing the card.
             Row(
               children: [
-                Text(
-                  'Qty: ${txn.quantity} ${txn.unit}',
-                  style: GrowboxTable.metaStyle(isDark),
+                Flexible(
+                  child: Text(
+                    'Qty: ${txn.quantity} ${txn.unit}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GrowboxTable.metaStyle(isDark),
+                  ),
                 ),
                 const SizedBox(width: AppDimensions.md),
-                Text(
-                  formatCurrency(txn.totalAmount),
-                  style: GrowboxTable.strongStyle(isDark),
+                Flexible(
+                  child: Text(
+                    formatCurrency(txn.totalAmount),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GrowboxTable.strongStyle(isDark),
+                  ),
                 ),
                 const Spacer(),
-                Text(
-                  _formatDate(txn.date),
-                  style: GrowboxTable.metaStyle(isDark),
+                Flexible(
+                  child: Text(
+                    _formatDate(txn.date),
+                    maxLines: 1,
+                    textAlign: TextAlign.end,
+                    overflow: TextOverflow.ellipsis,
+                    style: GrowboxTable.metaStyle(isDark),
+                  ),
                 ),
               ],
             ),

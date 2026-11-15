@@ -756,7 +756,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         width: 1,
                       ),
                     ),
-                    child: DropdownButtonHideUnderline(
+                    // Scaled down only when the label + arrow cannot fit the
+                    // available width (320px at 2.0x); normal size is unchanged.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: DropdownButtonHideUnderline(
                       child: DropdownButton<_DateRange>(
                         value: _selectedRange,
                         isDense: true,
@@ -776,6 +780,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         onChanged: (range) {
                           if (range != null) setState(() => _selectedRange = range);
                         },
+                      ),
                       ),
                     ),
               ),
@@ -1437,8 +1442,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
               ),
             ),
+            // Spacer keeps the button flush right at normal sizes; the loose
+            // Flexible lets it yield at large text scales without overflowing.
             const Spacer(),
-            TextButton(onPressed: () => context.go('/orders'), child: const Text('View All')),
+            Flexible(
+              child: TextButton(
+                onPressed: () => context.go('/orders'),
+                child: const Text('View All',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: AppDimensions.sm),
@@ -1531,20 +1544,29 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                     ),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      GrowboxStatusPill(status: order.status.name),
-                      if (order.status == OrderStatus.pending) ...[
-                        const SizedBox(width: 8),
-                        // Same shared action as the desktop table — solid
-                        // green, never a pale twin of the pill beside it.
-                        GrowboxTableAction(
-                          label: 'Accept',
-                          onTap: () => _acceptOrder(context, order),
-                        ),
-                      ],
-                    ],
+                  // The pill plus its action live in one flexible, scaled-down
+                  // block: at 320px/2.0x they can no longer sit beside the order
+                  // id, so they shrink instead of overflowing the row.
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GrowboxStatusPill(status: order.status.name),
+                          if (order.status == OrderStatus.pending) ...[
+                            const SizedBox(width: 8),
+                            // Same shared action as the desktop table — solid
+                            // green, never a pale twin of the pill beside it.
+                            GrowboxTableAction(
+                              label: 'Accept',
+                              onTap: () => _acceptOrder(context, order),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1553,9 +1575,20 @@ class _DashboardScreenState extends State<DashboardScreen>
               const SizedBox(height: AppDimensions.sm),
               Row(
                 children: [
-                  Text(formatCurrency(order.totalAmount), style: GrowboxTable.strongStyle(isDark)),
-                  const Spacer(),
-                  Text(timeAgo(order.createdAt), style: GrowboxTable.metaStyle(isDark)),
+                  Flexible(
+                    child: Text(formatCurrency(order.totalAmount),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GrowboxTable.strongStyle(isDark)),
+                  ),
+                  const SizedBox(width: AppDimensions.sm),
+                  Flexible(
+                    child: Text(timeAgo(order.createdAt),
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        overflow: TextOverflow.ellipsis,
+                        style: GrowboxTable.metaStyle(isDark)),
+                  ),
                 ],
               ),
             ],

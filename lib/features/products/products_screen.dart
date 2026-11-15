@@ -299,6 +299,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
       return LayoutBuilder(
         builder: (context, constraints) {
           final cols = constraints.maxWidth > 900 ? 4 : constraints.maxWidth > 600 ? 3 : 2;
+          // Larger text needs taller cards. Scaling the ratio by the text scale
+          // keeps the fixed info block inside the card at 1.5x/2.0x while the
+          // 1.0x layout is untouched.
+          final textScale = MediaQuery.textScalerOf(context).scale(1);
           return AnimationLimiter(
             child: GridView.builder(
               shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
@@ -314,13 +318,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // At 320px the two-column card is only ~246px tall while the
                 // info block (name, category, price, stock, stepper) needs
                 // ~260px, so the narrowest phones get a taller ratio.
-                childAspectRatio: cols >= 4
-                    ? 0.68
-                    : (cols == 3
-                        ? 0.62
-                        : (MediaQuery.sizeOf(context).width < 360
-                            ? 0.47
-                            : 0.52)),
+                childAspectRatio: (cols >= 4
+                        ? 0.68
+                        : (cols == 3
+                            ? 0.62
+                            : (MediaQuery.sizeOf(context).width < 360
+                                ? 0.47
+                                : 0.52))) /
+                    (textScale > 1 ? textScale : 1),
               ),
               itemCount: visible.length,
               itemBuilder: (context, i) => AnimationConfiguration.staggeredGrid(
@@ -480,7 +485,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
               badge: p.isLowStock ? const GrowboxBadge.error(label: 'Low stock', isSmall: true) : null,
             ),
           ),
-          Expanded(child: Padding(
+          Expanded(
+            child: LayoutBuilder(
+              // Scale the info block down only when the text really cannot fit
+              // (narrow card + large text scale). At 1.0x it is an exact no-op,
+              // so the card keeps its normal look; at 2.0x it shrinks instead
+              // of overflowing the fixed-height card.
+              builder: (context, box) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: box.maxWidth,
+                  height: box.maxHeight,
+                  child: Padding(
             padding: const EdgeInsets.fromLTRB(AppDimensions.md, AppDimensions.sm + 2, AppDimensions.md, AppDimensions.lg + 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,7 +547,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ),
               ],
             ),
-          )),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),

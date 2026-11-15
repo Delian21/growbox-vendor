@@ -53,12 +53,18 @@ class GrowboxStatusPill extends StatelessWidget {
             decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
-          Text(
-            spec.label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: fg,
+          // Flexible + ellipsis: pills sit in fixed-width table columns, so at
+          // large text scales the label must yield, not overflow the pill.
+          Flexible(
+            child: Text(
+              spec.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
             ),
           ),
         ],

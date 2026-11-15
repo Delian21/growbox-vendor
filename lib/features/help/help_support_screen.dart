@@ -232,22 +232,29 @@ class HelpSupportScreen extends StatelessWidget {
   Widget _buildInfoRow(bool isDark, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppDimensions.sm),
+      // Both sides flex: at large text scales the value wraps under its label
+      // instead of pushing the row past the card's width.
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+              ),
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+          const SizedBox(width: AppDimensions.sm),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              ),
             ),
           ),
         ],

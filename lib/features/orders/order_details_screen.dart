@@ -99,6 +99,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                 GrowboxStatusPill(status: order.status.name),
                 const SizedBox(height: AppDimensions.sm),
               ],
+              // The Column already constrains the width, so this long date
+              // wraps instead of overflowing the header at large text scales.
               Text(
                 'Placed ${_formatDate(order.createdAt)}',
                 style: TextStyle(
@@ -169,13 +171,15 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Flexible(
+                child: Text(
                 'Total (${order.totalItems} items)',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
                 ),
+              ),
               ),
               Text(
                 formatCurrency(order.totalAmount),

@@ -469,7 +469,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
             SizedBox(
               width: _actionsColWidth,
               child: showDecisionActions
-                  ? Row(
+                  // Scaled down, never overflowing: the Actions column has a
+                  // fixed width, and at 2.0x the tick + two labels need more.
+                  ? FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         // Bulk-select tick — pending orders only, labelled for
@@ -507,6 +512,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           onTap: () => _rejectOrder(context, order),
                         ),
                       ],
+                    ),
                     )
                   : showRestore
                       ? Align(
@@ -870,7 +876,10 @@ class _RejectOrderDialogState extends State<_RejectOrderDialog> {
     final order = widget.order;
     return AlertDialog(
       title: Text(order == null ? 'Reject ${widget.count} orders?' : 'Reject Order'),
-      content: Column(
+      // Scrolls when the text scale makes the dialog taller than the screen,
+      // instead of overflowing the dialog's bottom edge.
+      content: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -892,6 +901,7 @@ class _RejectOrderDialogState extends State<_RejectOrderDialog> {
             ),
           ),
         ],
+        ),
       ),
       actions: [
         TextButton(
