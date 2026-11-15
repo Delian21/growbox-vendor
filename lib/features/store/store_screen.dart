@@ -8,6 +8,7 @@ import '../../app/providers/store_provider.dart';
 import '../../shared/widgets/growbox_card.dart';
 import '../../shared/widgets/growbox_badge.dart';
 import '../../shared/utils/snackbar_helper.dart';
+import '../../shared/utils/store_photo_compression.dart';
 
 class StoreScreen extends StatelessWidget {
   const StoreScreen({super.key});
@@ -62,8 +63,14 @@ class StoreScreen extends StatelessWidget {
   }
 
   // Tap-to-pick a store photo and return it as a data-URL string (or null if
-  // the user cancels).
-  Future<String?> _pickStorePhoto(BuildContext context) async {
+  // the user cancels or the image cannot be made small enough).
+  //
+  // Both pickers go through [compressStorePhoto]: downscale, recompress, then
+  // step the quality down until the image fits its budget. That keeps the two
+  // photos well inside browser localStorage instead of filling it with a raw
+  // phone-camera JPEG.
+  Future<String?> _pickStorePhoto(
+      BuildContext context, StorePhotoKind kind) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -85,11 +92,51 @@ class StoreScreen extends StatelessWidget {
     );
     if (source == null) return null;
 
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 1600);
+    // Ask the picker for roughly the size each photo needs (logo 1024, banner
+    // 2000) so the huge camera JPEG never reaches memory; the compression
+    // helper below is still the safety net that enforces the real budgets.
+    final maxSide = kind == StorePhotoKind.logo ? 1024.0 : 2000.0;
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: maxSide,
+      maxHeight: maxSide,
+    );
     if (picked == null) return null;
 
     final bytes = await picked.readAsBytes();
-    return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+    try {
+      final compressed = await compressStorePhoto(bytes, kind);
+      return compressed.dataUrl;
+    } on ImageTooLargeException catch (e) {
+      // Refused rather than stored: say why, and keep the previous photo.
+      if (context.mounted) SnackbarHelper.showError(context, e.message);
+      return null;
+    }
+  }
+
+  /// Re-compresses an image that is already saved (a data URL) before saving
+  /// it again, so an oversized photo from before the budget existed shrinks
+  /// the next time it is saved. Assets are returned untouched.
+  Future<String?> _prepareSavedPhoto(
+    BuildContext context,
+    String value,
+    StorePhotoKind kind,
+  ) async {
+    if (!value.startsWith('data:image')) return value;
+    final comma = value.indexOf(',');
+    if (comma < 0) return value;
+    try {
+      final bytes = base64Decode(value.substring(comma + 1));
+      final compressed = await compressStorePhoto(bytes, kind);
+      return compressed.dataUrl;
+    } on ImageTooLargeException catch (e) {
+      if (context.mounted) SnackbarHelper.showError(context, e.message);
+      return null;
+    } catch (_) {
+      // An unreadable stored value must not block saving the rest of the form.
+      return value;
+    }
   }
 
   // Label + tappable preview box used by the Edit Store sheet.
@@ -189,15 +236,19 @@ class StoreScreen extends StatelessWidget {
             ),
           ),
         ),
-        OutlinedButton.icon(
+        // Flexible + ellipsis: at 320px the button cannot keep its intrinsic
+        // width beside the title once text is scaled up.
+        Flexible(
+          child: OutlinedButton.icon(
           onPressed: () => _showEditStoreSheet(context),
           icon: const Icon(Icons.edit_outlined, size: 16),
-          label: const Text('Edit Store'),
+          label: const Text('Edit Store', maxLines: 1, overflow: TextOverflow.ellipsis),
           style: OutlinedButton.styleFrom(
             foregroundColor: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
             side: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.radiusMd)),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
           ),
         ),
       ],
@@ -366,12 +417,15 @@ class StoreScreen extends StatelessWidget {
           children: [
             Icon(Icons.access_time_outlined, size: 16, color: AppColors.primary),
             const SizedBox(width: 6),
-            Text(
-              '${store.openTime} – ${store.closeTime}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+            // Flexible: the two times wrap instead of overflowing at 320px.
+            Flexible(
+              child: Text(
+                '${store.openTime} – ${store.closeTime}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                ),
               ),
             ),
           ],
@@ -526,7 +580,10 @@ class StoreScreen extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: AppColors.primary),
         const SizedBox(width: AppDimensions.sm),
-        Column(
+        // Expanded: a long email/address wraps inside the card instead of
+        // pushing the row past its width at large text scales.
+        Expanded(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -545,6 +602,7 @@ class StoreScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ],
     );
@@ -629,8 +687,11 @@ class StoreScreen extends StatelessWidget {
                         height: 120,
                         emptyHint: 'Tap to add a banner photo',
                         onTap: () async {
-                          final data = await _pickStorePhoto(ctx);
-                          if (data != null) setSheetState(() => pickedBanner = data);
+                          final data =
+                              await _pickStorePhoto(ctx, StorePhotoKind.banner);
+                          if (data != null) {
+                            setSheetState(() => pickedBanner = data);
+                          }
                         },
                       ),
                       const SizedBox(height: AppDimensions.md),
@@ -641,8 +702,11 @@ class StoreScreen extends StatelessWidget {
                         height: 96,
                         emptyHint: 'Tap to add a logo photo',
                         onTap: () async {
-                          final data = await _pickStorePhoto(ctx);
-                          if (data != null) setSheetState(() => pickedLogo = data);
+                          final data =
+                              await _pickStorePhoto(ctx, StorePhotoKind.logo);
+                          if (data != null) {
+                            setSheetState(() => pickedLogo = data);
+                          }
                         },
                       ),
                       const SizedBox(height: AppDimensions.lg),
@@ -669,20 +733,37 @@ class StoreScreen extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
-                      if (formKey.currentState!.validate()) {
-                        storeProvider.updateStore(
-                          name: nameController.text,
-                          description: descController.text,
-                          phone: phoneController.text,
-                          email: emailController.text,
-                          location: locationController.text,
-                          logoUrl: pickedLogo ?? store.logoUrl,
-                          bannerUrl: pickedBanner ?? store.bannerUrl,
-                        );
-                        Navigator.pop(ctx);
-                        SnackbarHelper.showSuccess(context, 'Store updated successfully!');
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      // Re-compress whatever will actually be stored, including
+                      // an older oversized image that is being kept.
+                      final logo = await _prepareSavedPhoto(
+                          ctx, pickedLogo ?? store.logoUrl, StorePhotoKind.logo);
+                      if (logo == null || !ctx.mounted) return;
+                      final banner = await _prepareSavedPhoto(ctx,
+                          pickedBanner ?? store.bannerUrl, StorePhotoKind.banner);
+                      if (banner == null || !ctx.mounted) return;
+
+                      final saved = await storeProvider.updateStore(
+                        name: nameController.text,
+                        description: descController.text,
+                        phone: phoneController.text,
+                        email: emailController.text,
+                        location: locationController.text,
+                        logoUrl: logo,
+                        bannerUrl: banner,
+                      );
+                      if (!ctx.mounted) return;
+                      if (!saved) {
+                        // Storage failed: say so and keep the sheet open with
+                        // the previous image still in the provider.
+                        SnackbarHelper.showError(ctx,
+                            'Could not save your changes. Please try again.');
+                        return;
                       }
+                      Navigator.pop(ctx);
+                      SnackbarHelper.showSuccess(
+                          context, 'Store updated successfully!');
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
