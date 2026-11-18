@@ -56,7 +56,7 @@ Future<void> _pumpOrders(
     providers: growboxProviders(),
     child: const GrowboxApp(),
   ));
-  await tester.pump(const Duration(seconds: 5)); // splash
+  await tester.pump(const Duration(seconds: 1)); // splash
   await _settle(tester);
 
   appRouter.go('/orders');

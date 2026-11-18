@@ -51,7 +51,7 @@ Code points **downward**: `features → shared → core`, and `features → app/
 
 `app/router.dart` defines a single `GoRouter` (`appRouter`):
 
-- **`/`** — splash (5s, then navigates to `/login`)
+- **`/`** — splash (1s minimum, then navigates to `/login`)
 - **Auth** — `/login`, `/register`, `/verify-email`, `/forgot-password`, `/reset-password`
 - **Auth status** — `/pending-approval`, `/suspended`
 - **Onboarding** — `/onboarding/business-info`, `/onboarding/contact-details`, `/onboarding/verification`, `/onboarding/success`

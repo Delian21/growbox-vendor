@@ -49,8 +49,8 @@ void main() {
       child: const GrowboxApp(),
     ));
 
-    // Splash (5s) → login, matching the other app tests.
-    await tester.pump(const Duration(seconds: 5));
+    // Splash (1s) → login, matching the other app tests.
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/sales');

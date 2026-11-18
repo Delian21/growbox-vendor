@@ -18,7 +18,7 @@ import 'load_roboto.dart';
 /// follows for the surfaces that overflow first: the Edit Store sheet, the
 /// single and bulk Reject dialogs and the bulk-selection bar.
 ///
-/// The app starts straight on the route under test — no 5-second splash — so a
+/// The app starts straight on the route under test — no 1-second splash — so a
 /// full matrix run stays practical.
 const List<(String, String)> _routes = [
   ('dashboard', '/dashboard'),
@@ -108,7 +108,7 @@ void main() {
           }
           // Flush the splash timer the fast start skipped, so the test binding
           // does not report a pending timer at teardown.
-          await tester.pump(const Duration(seconds: 5));
+          await tester.pump(const Duration(seconds: 1));
           expect(failures, isEmpty,
               reason: '${_label(size, scale, theme)}\n${failures.join('\n')}');
         });
@@ -172,7 +172,7 @@ void main() {
             failures.add('bulk Reject dialog: $bulkError');
           }
 
-          await tester.pump(const Duration(seconds: 5));
+          await tester.pump(const Duration(seconds: 1));
           expect(failures, isEmpty,
               reason: '${_label(size, scale, theme)}\n${failures.join('\n')}');
         });

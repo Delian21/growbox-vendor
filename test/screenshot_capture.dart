@@ -107,8 +107,8 @@ Future<void> _boot(
     providers: growboxProviders(),
     child: const GrowboxApp(),
   ));
-  // Splash holds for 5s, then the router lands on /login.
-  await tester.pump(const Duration(seconds: 5));
+  // Splash holds for 1s, then the router lands on /login.
+  await tester.pump(const Duration(seconds: 1));
   await _settle(tester);
 }
 

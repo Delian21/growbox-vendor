@@ -33,7 +33,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5)); // splash
+    await tester.pump(const Duration(seconds: 1)); // splash
     await tester.pumpAndSettle();
 
     final auth = Provider.of<AuthProvider>(
@@ -98,7 +98,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     final auth = Provider.of<AuthProvider>(
@@ -141,7 +141,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     final auth = Provider.of<AuthProvider>(
@@ -252,7 +252,7 @@ void main() {
       ],
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     final login = auth.login('vendor@example.com', 'secret123');

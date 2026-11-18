@@ -81,7 +81,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5)); // splash
+    await tester.pump(const Duration(seconds: 1)); // splash
     await tester.pumpAndSettle();
 
     String here() => appRouter.routerDelegate.currentConfiguration.uri.path;

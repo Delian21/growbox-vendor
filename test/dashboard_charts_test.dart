@@ -56,8 +56,8 @@ void main() {
       child: const GrowboxApp(),
     ));
 
-    // Splash (5s) → login, matching the boot test.
-    await tester.pump(const Duration(seconds: 5));
+    // Splash (1s) → login, matching the boot test.
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/dashboard');
@@ -190,7 +190,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/dashboard');
@@ -247,7 +247,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/dashboard');
@@ -325,7 +325,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/dashboard');
@@ -389,7 +389,7 @@ void main() {
       providers: growboxProviders(),
       child: const GrowboxApp(),
     ));
-    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     appRouter.go('/dashboard');

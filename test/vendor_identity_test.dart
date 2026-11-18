@@ -21,9 +21,9 @@ Future<AuthProvider> pumpShell(WidgetTester tester) async {
     child: const GrowboxApp(),
   ));
 
-  // Splash (5s) → login, then straight into the shell, as the other app tests
+  // Splash (1s) → login, then straight into the shell, as the other app tests
   // do; the router does not gate this route on _isAuthenticated.
-  await tester.pump(const Duration(seconds: 5));
+  await tester.pump(const Duration(seconds: 1));
   await tester.pumpAndSettle();
   appRouter.go('/dashboard');
   await tester.pumpAndSettle();

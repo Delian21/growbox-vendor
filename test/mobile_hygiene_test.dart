@@ -48,7 +48,7 @@ Future<void> _pump(WidgetTester tester, double width, int themeModeIndex) async 
     providers: growboxProviders(),
     child: const GrowboxApp(),
   ));
-  await tester.pump(const Duration(seconds: 5)); // splash
+  await tester.pump(const Duration(seconds: 1)); // splash
   await _settle(tester);
 }
 
