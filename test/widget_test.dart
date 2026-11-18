@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -66,6 +68,39 @@ void main() {
     expect(find.byType(SplashScreen), findsOneWidget);
 
     // The work finishes, and only then does the app move on.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Login'), findsOneWidget);
+  });
+
+  testWidgets('Splash gives up on startup work that never finishes',
+      (WidgetTester tester) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          // Startup work that never completes, as a hung platform channel
+          // would look.
+          builder: (_, _) =>
+              SplashScreen(startup: () => Completer<void>().future),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (_, _) => const Scaffold(body: Text('Login')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    expect(find.byType(SplashScreen), findsOneWidget);
+
+    // The minimum and well past it: the splash is still waiting, not stuck.
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.byType(SplashScreen), findsOneWidget);
+
+    // At the timeout it gives up and lets the vendor in anyway.
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.text('Login'), findsOneWidget);

@@ -8,6 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// vendor is never waiting on it.
 const Duration kSplashMinimumDuration = Duration(seconds: 1);
 
+/// Ceiling on the startup work. Opening the preference store takes
+/// milliseconds; if the platform channel ever hangs, the splash stops waiting
+/// after this rather than trapping the vendor on it forever.
+const Duration kSplashStartupTimeout = Duration(seconds: 5);
+
 /// The real work a cold start has to finish before the first screen: opening
 /// the preference store that the theme mode and the store profile are read
 /// from. Everything else (products, orders, sales, notifications) is in-memory
@@ -41,8 +46,6 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
 
-  bool _left = false;
-
   @override
   void initState() {
     super.initState();
@@ -67,22 +70,23 @@ class _SplashScreenState extends State<SplashScreen>
 
   /// Leaves for the login screen once the minimum display time is up and the
   /// startup work has finished — never before, and never on a fixed wait that
-  /// ignores how long the work actually took.
+  /// ignores how long the work actually took. Runs once, from [initState];
+  /// `mounted` covers the case where the splash is gone before it resolves.
   Future<void> _leaveWhenReady() async {
     await Future.wait<void>([
       Future<void>.delayed(widget.minimumDuration),
       _runStartup(),
     ]);
-    if (!mounted || _left) return;
-    _left = true;
+    if (!mounted) return;
     context.go('/login');
   }
 
-  /// Startup work must never trap the vendor on the splash: a failure here is
-  /// logged and the app carries on to the login screen.
+  /// Startup work must never trap the vendor on the splash: a failure is
+  /// logged and a future that never completes is abandoned at
+  /// [kSplashStartupTimeout], so the app always reaches the login screen.
   Future<void> _runStartup() async {
     try {
-      await widget.startup();
+      await widget.startup().timeout(kSplashStartupTimeout);
     } catch (e) {
       debugPrint('Startup work failed: $e');
     }
